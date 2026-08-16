@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n-title="projectsPage.title">Steel Arts Projects</title>
+  <link rel="stylesheet" href="styles.css?v=20260816a" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero-banner hero-banner-projects">
+      <div class="hero-copy">
+        <span class="eyebrow" data-i18n="common.appName">Steel Arts Ledger</span>
+        <h1 id="projectsHeroTitle" data-i18n="projectsPage.heroTitle">Project Hub</h1>
+        <p data-i18n="projectsPage.heroDescription">
+          Organize every project in one place, then feed those names back into the
+          dashboard for faster transaction entry.
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        <nav class="nav-pills" data-i18n-aria-label="common.navPrimary" aria-label="Primary">
+          <a class="nav-pill" href="index.html" data-i18n="common.dashboard">Dashboard</a>
+          <a class="nav-pill is-active" href="projects.html" data-i18n="common.projects">Projects</a>
+        </nav>
+
+        <label class="language-switcher">
+          <span data-i18n="common.language">Language</span>
+          <select data-language-switcher data-i18n-aria-label="common.language" aria-label="Language">
+            <option value="en" data-i18n="common.languageEnglish">English</option>
+            <option value="hi" data-i18n="common.languageHindi">Hindi</option>
+            <option value="kn" data-i18n="common.languageKannada">Kannada</option>
+            <option value="ta" data-i18n="common.languageTamil">Tamil</option>
+            <option value="te" data-i18n="common.languageTelugu">Telugu</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <section class="content-grid content-grid-tight">
+      <div class="panel panel-accent">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow eyebrow-soft" data-i18n="common.create">Create</span>
+            <h2 data-i18n="common.addProject">Add Project</h2>
+          </div>
+        </div>
+
+        <div class="inline-form">
+          <input
+            type="text"
+            id="projectName"
+            data-i18n-placeholder="projectsPage.projectNamePlaceholder"
+            placeholder="Enter project name"
+            data-i18n-aria-label="projectsPage.projectNameAria"
+            aria-label="Project Name"
+          />
+          <button type="button" id="addProjectButton" data-i18n="common.addProject">Add Project</button>
+        </div>
+
+        <div class="assignment-panel create-assignment-panel">
+          <div class="assignment-head">
+            <strong>Add registered project member</strong>
+            <span>Enter their email address or mobile number. Their registered role is used automatically.</span>
+          </div>
+          <div class="inline-form">
+            <input type="text" id="registeredMemberIdentifier" placeholder="Email address or mobile number" />
+            <button type="button" id="addRegisteredMemberButton">Add member</button>
+          </div>
+          <p class="helper-text" id="registeredMemberHelper"></p>
+        </div>
+
+        <div class="assignment-panel create-assignment-panel">
+          <div class="assignment-head">
+            <strong data-i18n="projectsPage.createInvestorsTitle">Project Investors</strong>
+            <span data-i18n="projectsPage.createInvestorsDescription">Select existing investors or add as many new ones as you need</span>
+          </div>
+
+          <div class="choice-grid" id="newProjectInvestorOptions"></div>
+
+          <div class="dynamic-input-stack" id="newProjectInvestorInputs"></div>
+
+          <button type="button" class="button-secondary" id="addInvestorFieldButton" data-i18n="common.addNewInvestor">
+            + Add New Investor
+          </button>
+        </div>
+
+        <div class="assignment-panel create-assignment-panel">
+          <div class="assignment-head">
+            <strong data-i18n="projectsPage.createSupervisorsTitle">Project Supervisors</strong>
+            <span data-i18n="projectsPage.createSupervisorsDescription">Supervisors will also log spend and entries just like investors</span>
+          </div>
+
+          <div class="choice-grid" id="newProjectSupervisorOptions"></div>
+
+          <div class="dynamic-input-stack" id="newProjectSupervisorInputs"></div>
+
+          <button type="button" class="button-secondary" id="addSupervisorFieldButton" data-i18n="common.addNewSupervisor">
+            + Add New Supervisor
+          </button>
+        </div>
+
+        <p class="helper-text helper-text-strong" id="addProjectHelper" data-i18n="projectsPage.createHelper">
+          Choose existing members or add new ones while creating the project so its page is ready immediately.
+        </p>
+      </div>
+
+      <div class="stat-grid stat-grid-compact" data-i18n-aria-label="common.projectOverview" aria-label="Project overview">
+        <article class="stat-card">
+          <span class="stat-label" data-i18n="common.projects">Projects</span>
+          <strong id="projectCount">0</strong>
+          <small data-i18n="projectsPage.statProjectCaption">Currently tracked</small>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-label" data-i18n="common.expenseEntries">Expense Entries</span>
+          <strong id="entryCount">0</strong>
+          <small data-i18n="projectsPage.statEntryCaption">Across all projects</small>
+        </article>
+
+        <article class="stat-card stat-card-highlight">
+          <span class="stat-label" data-i18n="common.projectSpend">Project Spend</span>
+          <strong id="projectSpend">₹0.00</strong>
+          <small data-i18n="projectsPage.statSpendCaption">All recorded expenses</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <span class="eyebrow eyebrow-soft" data-i18n="common.portfolio">Portfolio</span>
+          <h2 data-i18n="common.projectList">Project List</h2>
+        </div>
+      </div>
+
+      <div class="project-browser">
+        <div class="project-list" id="projectList"></div>
+        <div class="project-detail" id="projectDetail"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="bill-modal" id="deleteProjectModal" hidden role="dialog" aria-modal="true" aria-labelledby="deleteProjectModalTitle">
+    <div class="bill-modal-panel delete-project-modal-panel">
+      <div class="bill-modal-head">
+        <h2 id="deleteProjectModalTitle">Request project deletion</h2>
+        <button type="button" class="button-secondary bill-modal-close" id="cancelProjectDeletion">Cancel</button>
+      </div>
+      <p id="deleteProjectModalMessage" class="helper-text"></p>
+      <p id="deleteProjectCountdown" class="delete-project-countdown" aria-live="polite"></p>
+      <div class="action-cluster">
+        <button type="button" class="button-danger" id="confirmProjectDeletion" disabled>Request approval</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="common.js?v=20260530a"></script>
+  <script src="projects.js?v=20260816a"></script>
+</body>
+</html>

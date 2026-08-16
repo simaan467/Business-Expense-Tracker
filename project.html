@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n-title="projectPage.title">Steel Arts Project</title>
+  <link rel="stylesheet" href="styles.css?v=20260816approval2" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero-banner hero-banner-projects">
+      <div class="hero-copy">
+        <span class="eyebrow" data-i18n="common.appName">Steel Arts Ledger</span>
+        <h1 id="projectHeroTitle" data-i18n="projectPage.heroTitle">Project Page</h1>
+        <p id="projectHeroSubtitle" data-i18n="projectPage.heroSubtitle">
+          This page is reserved for one project only, with its own investors,
+          supervisors, filters, entry form, and transaction ledger.
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        <nav class="nav-pills" data-i18n-aria-label="common.navPrimary" aria-label="Primary">
+          <a class="nav-pill" href="index.html" data-i18n="common.dashboard">Dashboard</a>
+          <a class="nav-pill" href="projects.html" data-i18n="common.projects">Projects</a>
+          <a class="nav-pill is-active" href="project.html" id="projectNavLink" data-i18n="common.projectPage">Project Page</a>
+        </nav>
+
+        <label class="language-switcher">
+          <span data-i18n="common.language">Language</span>
+          <select data-language-switcher data-i18n-aria-label="common.language" aria-label="Language">
+            <option value="en" data-i18n="common.languageEnglish">English</option>
+            <option value="hi" data-i18n="common.languageHindi">Hindi</option>
+            <option value="kn" data-i18n="common.languageKannada">Kannada</option>
+            <option value="ta" data-i18n="common.languageTamil">Tamil</option>
+            <option value="te" data-i18n="common.languageTelugu">Telugu</option>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <div id="projectPageContent">
+      <section class="stat-grid" data-i18n-aria-label="common.projectOverview" aria-label="Project overview">
+        <article class="stat-card">
+          <span class="stat-label" data-i18n="common.projectInvestors">Project Investors</span>
+          <strong id="statProjectInvestorCount">0</strong>
+          <small data-i18n="projectPage.investorCaption">Assigned or historically used here</small>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-label" data-i18n="common.projectSupervisors">Project Supervisors</span>
+          <strong id="statProjectSupervisorCount">0</strong>
+          <small data-i18n="projectPage.supervisorCaption">Tracked only for this project</small>
+        </article>
+
+        <article class="stat-card">
+          <span class="stat-label" data-i18n="common.projectEntries">Project Entries</span>
+          <strong id="statProjectEntryCount">0</strong>
+          <small data-i18n="projectPage.entryCaption">Recorded inside this page</small>
+        </article>
+
+        <article class="stat-card stat-card-highlight">
+          <span class="stat-label" data-i18n="common.projectSpend">Project Spend</span>
+          <strong id="statProjectSpend">₹0.00</strong>
+          <small id="statProjectSpendCaption" data-i18n="projectPage.spendCaption">All expenses for this project</small>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow eyebrow-soft" data-i18n="common.investorView">Investor View</span>
+              <h2 data-i18n="projectPage.investorStandings">Investor Standings</h2>
+            </div>
+          </div>
+
+          <div class="investor-list" id="projectInvestorList"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow eyebrow-soft" data-i18n="common.supervisorView">Supervisor View</span>
+              <h2 data-i18n="projectPage.supervisorStandings">Supervisor Standings</h2>
+            </div>
+          </div>
+
+          <div class="investor-list" id="projectSupervisorList"></div>
+        </div>
+      </section>
+
+      <section class="content-grid content-grid-tight">
+        <div class="panel panel-accent">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow eyebrow-soft" data-i18n="common.dailyEntry">Daily Entry</span>
+              <h2 data-i18n="common.addTransaction">Add Transaction</h2>
+            </div>
+            <a class="text-link" href="projects.html" id="manageProjectLink" data-i18n="common.manageThisProject">Manage this project</a>
+          </div>
+
+          <div class="form-grid">
+            <label class="field">
+              <span data-i18n="common.role">Role</span>
+              <select id="transactionMemberType">
+                <option value="" data-i18n="common.chooseRole">Choose role</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span data-i18n="common.name">Name</span>
+              <select id="transactionMember">
+                <option value="" data-i18n="common.chooseMember">Choose member</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span data-i18n="common.paidTo">Paid To</span>
+              <input
+                type="text"
+                id="transactionPaidTo"
+                data-i18n-placeholder="projectPage.paidToPlaceholder"
+                placeholder="Vendor or person name"
+              />
+            </label>
+
+            <label class="field">
+              <span data-i18n="common.amount">Amount</span>
+              <input
+                type="number"
+                id="transactionAmount"
+                data-i18n-placeholder="projectPage.amountPlaceholder"
+                placeholder="0.00"
+                min="0"
+                step="0.01"
+              />
+            </label>
+
+            <label class="field field-upload">
+              <span>Photo / Bill</span>
+              <input
+                type="file"
+                id="transactionBill"
+                accept="image/*"
+                capture="environment"
+              />
+              <small id="transactionBillName" class="upload-helper">Take a photo or choose an image</small>
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button type="button" id="addTransactionButton" data-i18n="common.saveTransaction">Save Transaction</button>
+            <p class="helper-text" id="transactionHelper"></p>
+            <p class="helper-text db-status" id="databaseStatus">Checking online database...</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow eyebrow-soft" data-i18n="common.projectTeam">Project Team</span>
+              <h2 data-i18n="common.addMoreMembers">Add More Members</h2>
+            </div>
+          </div>
+
+          <p class="helper-text section-note" data-i18n="projectPage.teamNote">
+            Need more investors or supervisors later? Add them here and they will become available immediately for this project.
+          </p>
+
+          <div class="form-grid">
+            <label class="field">
+              <span data-i18n="common.role">Role</span>
+              <select id="projectMemberRole">
+                <option value="Investor" data-i18n="common.investor">Investor</option>
+                <option value="Supervisor" data-i18n="common.supervisor">Supervisor</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span data-i18n="common.existingName">Existing Name</span>
+              <select id="projectMemberExisting">
+                <option value="" data-i18n="common.chooseExistingMember">Choose existing member</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span data-i18n="common.newName">New Name</span>
+              <input
+                type="text"
+                id="projectMemberNew"
+                data-i18n-placeholder="projectPage.newMemberPlaceholder"
+                placeholder="Type a new member name"
+              />
+            </label>
+
+            <label class="field">
+              <span>Mobile Number</span>
+              <input
+                type="tel"
+                id="projectMemberMobile"
+                placeholder="Enter mobile number for a new member"
+              />
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button type="button" id="addProjectMemberButton" data-i18n="common.addToProject">Add To Project</button>
+            <p class="helper-text" id="projectMemberHelper"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="approvalPanel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow eyebrow-soft">Approval notifications</span>
+            <h2>Pending transaction approvals</h2>
+          </div>
+          <p class="helper-text" id="approvalStatus">Checking for pending approvals...</p>
+        </div>
+        <p class="helper-text section-note">Expenses appear in the ledger only after a majority of the project's investors approve them. The person who submitted an expense cannot approve it.</p>
+        <div class="approval-list" id="pendingApprovalList"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow eyebrow-soft" data-i18n="common.quickView">Quick View</span>
+            <h2 data-i18n="common.filters">Filters</h2>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label class="field">
+            <span data-i18n="common.role">Role</span>
+            <select id="filterRole">
+              <option value="" data-i18n="common.allRoles">All Roles</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span data-i18n="common.name">Name</span>
+            <select id="filterMember">
+              <option value="" data-i18n="common.allNames">All Names</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span data-i18n="common.paidTo">Paid To</span>
+            <select id="filterPaidTo">
+              <option value="" data-i18n="common.allPaidTo">All Paid To</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow eyebrow-soft" data-i18n="common.projectLedger">Project Ledger</span>
+            <h2 id="transactionHeading" data-i18n="common.transactions">Transactions</h2>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="transaction-table">
+            <thead>
+              <tr>
+                <th data-i18n="common.role">Role</th>
+                <th data-i18n="common.name">Name</th>
+                <th data-i18n="common.paidTo">Paid To</th>
+                <th data-i18n="common.amount">Amount</th>
+                <th data-i18n="common.date">Date</th>
+                <th>Bill</th>
+              </tr>
+            </thead>
+            <tbody id="projectTransactionBody"></tbody>
+            <tfoot>
+              <tr>
+                <td colspan="3" data-i18n="common.totalExpenses">Total Expenses</td>
+                <td id="projectFilteredTotal">₹0.00</td>
+                <td></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="bill-modal" id="billPreviewModal" hidden>
+    <div class="bill-modal-panel" role="dialog" aria-modal="true" aria-labelledby="billPreviewTitle">
+      <div class="bill-modal-head">
+        <h2 id="billPreviewTitle">Bill Image</h2>
+        <button type="button" class="bill-modal-close" id="billPreviewClose" aria-label="Close bill preview">Close</button>
+      </div>
+      <img id="billPreviewImage" alt="Transaction bill" />
+    </div>
+  </div>
+
+  <script src="common.js?v=20260627db3"></script>
+  <script src="project-page.js?v=20260816approval2"></script>
+</body>
+</html>
