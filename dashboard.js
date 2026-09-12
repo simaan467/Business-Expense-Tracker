@@ -2,6 +2,19 @@ let investors = [];
 let supervisors = [];
 let projects = [];
 let transactions = [];
+let approvalCounts = new Map();
+const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
+
+async function loadApprovalNotifications() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/approval-notifications`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Approval notifications are unavailable.");
+    approvalCounts = new Map((await response.json()).map(item => [String(item.projectId), Number(item.count) || 0]));
+  } catch (error) {
+    console.warn(error.message);
+    approvalCounts = new Map();
+  }
+}
 
 function refreshState() {
   investors = readCollection(STORAGE_KEYS.investors)
@@ -31,9 +44,10 @@ function refreshState() {
 function renderOverview() {
   document.getElementById("statInvestorCount").textContent = investors.length;
   document.getElementById("statProjectCount").textContent = projects.length;
-  document.getElementById("statExpenseTotal").textContent = formatCurrency(
-    sumTransactions(transactions)
-  );
+  const total = Array.from(approvalCounts.values()).reduce((sum, count) => sum + count, 0);
+  const badge = document.getElementById("dashboardApprovalCount");
+  badge.textContent = total;
+  badge.hidden = total === 0;
 }
 
 function renderProjectDirectory() {
@@ -76,8 +90,12 @@ function renderProjectDirectory() {
           <strong class="amount">${formatCurrency(item.total)}</strong>
         </div>
         <div class="meta-row">
-          <span>${escapeHtml(t("common.projectPage"))}</span>
-          <strong>${escapeHtml(t("dashboard.projectPageValue"))}</strong>
+          <span>Total invested</span>
+          <strong class="amount">${formatCurrency(Number(item.project.totalInvested || 0))}</strong>
+        </div>
+        <div class="meta-row">
+          <span>Investment balance</span>
+          <strong class="amount">${formatCurrency(Number(item.project.totalInvested || 0) - item.total)}</strong>
         </div>
       </div>
 
@@ -85,12 +103,27 @@ function renderProjectDirectory() {
         <a class="button-link" href="project.html?id=${encodeURIComponent(item.project.id)}">
           ${escapeHtml(t("common.openProjectPage"))}
         </a>
-        <a class="text-link" href="projects.html?id=${encodeURIComponent(item.project.id)}">
-          ${escapeHtml(t("common.manageThisProject"))}
-        </a>
+        <button type="button" class="button-danger dashboard-delete-project" data-delete-project-id="${escapeHtml(item.project.id)}">Delete Project</button>
       </div>
     </article>
   `).join("");
+}
+
+async function requestDashboardProjectDeletion(projectId) {
+  const project = projects.find(item => String(item.id) === String(projectId));
+  if (!project || !confirm(`Request deletion of "${project.name}"? Investor approval may be required.`)) return;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/deletion-request`, { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Deletion request could not be sent.");
+    await hydrateWorkspaceFromDatabase(API_BASE_URL);
+    await loadApprovalNotifications();
+    refreshState();
+    renderAll();
+    alert(result.deleted ? "Project deleted." : "Deletion request sent to the project investors for approval.");
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function renderAll() {
@@ -98,12 +131,17 @@ function renderAll() {
   renderProjectDirectory();
 }
 window.addEventListener("app-languagechange", renderAll);
+document.getElementById("projectDirectory").addEventListener("click", event => {
+  const button = event.target.closest(".dashboard-delete-project");
+  if (button) requestDashboardProjectDeletion(button.dataset.deleteProjectId);
+});
 
 refreshState();
 renderAll();
 
 hydrateWorkspaceFromDatabase()
-  .then(() => {
+  .then(async () => {
+    await loadApprovalNotifications();
     refreshState();
     renderAll();
   })

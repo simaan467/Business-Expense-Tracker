@@ -4,6 +4,39 @@ let projects = [];
 let transactions = [];
 let project = null;
 let pendingTransactions = [];
+let investments = [];
+let pendingInvestments = [];
+let selectedInvestorForHistory = "";
+let investmentRequestInvestor = null;
+let requestSuccessTimer = null;
+let activeProjectSection = new URLSearchParams(window.location.search).get("section") === "approvals" ? "approvals" : "";
+
+function showProjectSection(section) {
+  activeProjectSection = section;
+  const navigatorIntro = document.getElementById("projectNavigatorIntro");
+  if (navigatorIntro) navigatorIntro.hidden = Boolean(section);
+  document.querySelectorAll("[data-project-section]").forEach(element => {
+    element.hidden = element.dataset.projectSection !== section;
+  });
+  document.querySelectorAll("[data-project-section-target]").forEach(button => {
+    button.classList.toggle("is-active", button.dataset.projectSectionTarget === section);
+  });
+  // The transaction/member panels share a layout container; collapse it when
+  // neither of its children belongs to the active destination.
+  document.querySelectorAll(".content-grid-tight").forEach(grid => {
+    const routedChildren = grid.querySelectorAll(":scope > [data-project-section]");
+    if (routedChildren.length) grid.hidden = !Array.from(routedChildren).some(child => !child.hidden);
+  });
+}
+
+function showRequestSubmitted(message = "Your request has been submitted.") {
+  const toast = document.getElementById("requestSuccessToast");
+  if (!toast) return;
+  document.getElementById("requestSuccessToastText").textContent = message;
+  toast.hidden = false;
+  clearTimeout(requestSuccessTimer);
+  requestSuccessTimer = window.setTimeout(() => { toast.hidden = true; }, 3500);
+}
 
 function refreshState() {
   investors = readCollection(STORAGE_KEYS.investors)
@@ -125,6 +158,8 @@ function renderHeader() {
 
 function renderOverview() {
   const pageTransactions = getPageTransactions();
+  const totalInvested = investments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const totalSpent = sumTransactions(pageTransactions);
 
   document.getElementById("statProjectInvestorCount").textContent =
     getProjectMemberNamesForPage("Investor").length;
@@ -132,8 +167,10 @@ function renderOverview() {
     getProjectMemberNamesForPage("Supervisor").length;
   document.getElementById("statProjectEntryCount").textContent = pageTransactions.length;
   document.getElementById("statProjectSpend").textContent = formatCurrency(
-    sumTransactions(pageTransactions)
+    totalSpent
   );
+  document.getElementById("statProjectInvestment").textContent = formatCurrency(totalInvested);
+  document.getElementById("statProjectInvestmentBalance").textContent = formatCurrency(totalInvested - totalSpent);
 }
 
 function renderMemberStandings(listId, memberType) {
@@ -156,14 +193,18 @@ function renderMemberStandings(listId, memberType) {
   }
 
   list.innerHTML = memberNames.map(memberName => `
-    <article class="investor-card member-card member-card-${roleClass}">
-      <h3>${escapeHtml(memberName)}</h3>
+    <article class="investor-card member-card member-card-${roleClass} ${memberType === "Investor" ? "investor-history-trigger" : ""}" ${memberType === "Investor" ? `data-investor-history="${escapeHtml(memberName)}"` : ""}>
+      <div class="approval-heading">
+        <h3>${escapeHtml(memberName)}</h3>
+        ${memberType === "Investor" ? `<button type="button" class="button-secondary add-investment-button" data-add-investment-for="${escapeHtml(memberName)}">Add investment</button>` : ""}
+      </div>
       <div class="chip-row">
         <span class="chip ${assignedNames.has(memberName) ? "" : "muted-chip"}">
           ${escapeHtml(assignedNames.has(memberName) ? t("common.assigned") : t("common.historical"))}
         </span>
       </div>
       <div class="card-meta">
+        ${memberType === "Investor" ? `<div class="meta-row"><span>Total invested</span><strong class="amount">${formatCurrency(investments.filter(item => item.investorName === memberName).reduce((sum, item) => sum + Number(item.amount || 0), 0))}</strong></div>` : ""}
         <div class="meta-row">
           <span>${escapeHtml(t("common.totalSpent"))}</span>
           <strong class="amount">${formatCurrency(totals[memberName] || 0)}</strong>
@@ -175,6 +216,27 @@ function renderMemberStandings(listId, memberType) {
       </div>
     </article>
   `).join("");
+}
+
+async function loadInvestments() {
+  if (!project) return;
+  try {
+    const [confirmed, pending] = await Promise.all([
+      fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/investments`, { cache: "no-store" }),
+      fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/pending-investments`, { cache: "no-store" })
+    ]);
+    if (!confirmed.ok || !pending.ok) throw new Error("Unable to load investment records.");
+    investments = await confirmed.json(); pendingInvestments = await pending.json();
+    renderAll(); renderPendingApprovals();
+  } catch (error) { console.warn("Investment records unavailable.", error); }
+}
+
+function renderInvestorHistory() {
+  const title = document.getElementById("investorHistoryTitle"), list = document.getElementById("investorHistoryList");
+  if (!selectedInvestorForHistory) return;
+  const entries = investments.filter(item => item.investorName === selectedInvestorForHistory);
+  title.textContent = `${selectedInvestorForHistory}'s investments`;
+  list.innerHTML = entries.length ? entries.map(item => `<article class="approval-card"><div><h3>${formatCurrency(item.amount)}</h3><p class="helper-text">Invested on ${escapeHtml(formatTransactionDate({ createdAt: item.createdAt }))}</p></div></article>`).join("") : '<div class="empty-state">No approved investments yet.</div>';
 }
 
 function renderTransactionForm() {
@@ -243,7 +305,11 @@ function renderProjectMemberManager() {
   const resolvedRole = ["Investor", "Supervisor"].includes(selectedRole)
     ? selectedRole
     : "Investor";
-  const unassignedNames = getUnassignedGlobalNames(resolvedRole);
+  // Investors already assigned to this project remain selectable because they
+  // can submit an additional contribution; supervisors cannot be duplicated.
+  const unassignedNames = resolvedRole === "Investor"
+    ? getCollectionForMemberType("Investor").map(member => member.name).sort((a, b) => a.localeCompare(b))
+    : getUnassignedGlobalNames(resolvedRole);
   const memberTypeLabel = getMemberTypeLabel(resolvedRole);
 
   roleSelect.value = resolvedRole;
@@ -264,6 +330,7 @@ function renderProjectMemberManager() {
   helper.textContent = unassignedNames.length
     ? t("projectPage.memberManagerHelperChoose", { memberType: memberTypeLabel })
     : t("projectPage.memberManagerHelperNone", { memberType: memberTypeLabel });
+  document.getElementById("projectMemberInvestmentField").hidden = resolvedRole !== "Investor";
 }
 
 function renderFilters() {
@@ -355,10 +422,18 @@ function getTransactionById(id) {
 
 function renderBillLink(tx) {
   if (!tx.billImage?.dataUrl) {
-    return '<span class="muted-cell">-</span>';
+    return `<div class="ledger-bill-actions"><button type="button" class="delete-ledger-transaction button-secondary" data-delete-ledger-id="${escapeHtml(tx.id)}">Delete</button></div>`;
   }
+  return `<div class="ledger-bill-actions"><button type="button" class="bill-link" data-bill-id="${escapeHtml(tx.id)}">View</button><button type="button" class="delete-ledger-transaction button-secondary" data-delete-ledger-id="${escapeHtml(tx.id)}">Delete</button></div>`;
+}
 
-  return `<button type="button" class="bill-link" data-bill-id="${escapeHtml(tx.id)}">View</button>`;
+async function requestLedgerDeletion(id) {
+  if (!confirm("Send this transaction deletion for investor approval?")) return;
+  const response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}/deletion-request`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { alert(result.error || "Deletion request could not be sent."); return; }
+  if (result.deleted) { await loadRemoteTransactions(); refreshState(); renderAll(); }
+  alert(result.deleted ? "Transaction deleted." : "Deletion request sent for investor approval.");
 }
 
 function openBillPreview(transactionId) {
@@ -514,9 +589,8 @@ function renderPendingApprovals() {
     : "No pending transaction approvals.";
   if (!pendingTransactions.length) {
     list.innerHTML = '<div class="empty-state">All submitted expenses have been approved.</div>';
-    return;
-  }
-  list.innerHTML = pendingTransactions.map(tx => {
+  } else {
+    list.innerHTML = pendingTransactions.map(tx => {
     const canApprove = approvable.some(item => item.id === tx.id);
     const remaining = Math.max(0, tx.requiredApprovals - tx.approvedBy.length);
     const billMarkup = tx.billImage?.dataUrl
@@ -541,9 +615,60 @@ function renderPendingApprovals() {
       </div>
       <div class="approval-actions">
         ${canApprove ? `<button type="button" class="approve-transaction" data-approval-id="${escapeHtml(tx.id)}">Review & approve</button>` : '<span class="chip muted-chip">Pending</span>'}
+        ${tx.proposerName === currentUser ? `<button type="button" class="edit-pending-transaction button-secondary" data-edit-pending-id="${escapeHtml(tx.id)}">Edit</button><button type="button" class="delete-pending-transaction button-secondary" data-delete-pending-id="${escapeHtml(tx.id)}">Delete request</button>` : ""}
       </div>
     </article>`;
-  }).join("");
+    }).join("");
+  }
+  const investmentList = document.getElementById("pendingInvestmentList");
+  if (investmentList) {
+    investmentList.innerHTML = pendingInvestments.length ? pendingInvestments.map(item => {
+      const canApprove = item.eligibleApprovers.some(name => name.toLowerCase() === currentUser.toLowerCase()) && !item.approvedBy.some(name => name.toLowerCase() === currentUser.toLowerCase());
+      return `<article class="approval-card"><div class="approval-details"><div class="approval-heading"><div><span class="eyebrow eyebrow-soft">Investment awaiting approval</span><h3>${escapeHtml(item.investorName)}${item.isNewInvestor ? " · New investor" : " · Additional investment"}</h3></div><strong class="approval-amount">${formatCurrency(item.amount)}</strong></div><p class="helper-text">Submitted by ${escapeHtml(item.proposerName)} · ${item.approvedBy.length} of ${item.requiredApprovals} approvals</p></div><div class="approval-actions">${canApprove ? `<button type="button" class="approve-investment" data-investment-approval-id="${escapeHtml(item.id)}">Review & approve</button>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
+    }).join("") : "";
+  }
+}
+
+async function approvePendingInvestment(id) {
+  const response = await fetch(`${API_BASE_URL}/api/pending-investments/${encodeURIComponent(id)}/approve`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { alert(result.error || "Investment request could not be approved."); return; }
+  await loadInvestments();
+  alert(result.request.status === "approved" ? "Investment approved and recorded." : "Your approval was recorded.");
+}
+
+function openAddInvestmentModal(investorName) {
+  const investor = investors.find(item => item.name === investorName);
+  if (!investor) { alert("Investor details could not be found."); return; }
+  investmentRequestInvestor = investor;
+  document.getElementById("addInvestmentInvestorName").textContent = `Adding an investment for ${investor.name}`;
+  document.getElementById("addInvestmentAmount").value = "";
+  document.getElementById("addInvestmentHelper").textContent = "";
+  document.getElementById("addInvestmentModal").hidden = false;
+  document.getElementById("addInvestmentAmount").focus();
+}
+
+function closeAddInvestmentModal() {
+  investmentRequestInvestor = null;
+  document.getElementById("addInvestmentModal").hidden = true;
+}
+
+async function submitInvestmentRequest() {
+  const amount = Number(document.getElementById("addInvestmentAmount").value);
+  const helper = document.getElementById("addInvestmentHelper");
+  if (!investmentRequestInvestor || !Number.isFinite(amount) || amount <= 0) { helper.textContent = "Enter a positive investment amount."; return; }
+  helper.textContent = "Sending investment request...";
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/investment-requests`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: investmentRequestInvestor.name, mobile: investmentRequestInvestor.mobile, amount })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Investment request could not be submitted.");
+    closeAddInvestmentModal();
+    await loadInvestments();
+    alert(result.request.status === "approved" ? "Investment recorded." : "Investment request sent for approval.");
+  } catch (error) { helper.textContent = error.message; }
 }
 
 async function approvePendingTransaction(id) {
@@ -554,9 +679,30 @@ async function approvePendingTransaction(id) {
   });
   const result = await response.json();
   if (!response.ok) { alert(result.error || "Transaction could not be approved."); return; }
+  showRequestSubmitted("Your approval has been submitted.");
   await Promise.all([loadPendingTransactions(), loadRemoteTransactions()]);
   refreshState(); renderAll();
   if (result.transaction.status === "approved") alert("Approval recorded. The transaction is now in the project ledger.");
+}
+
+async function deletePendingTransaction(id) {
+  if (!confirm("Delete this pending transaction request?")) return;
+  const response = await fetch(`${API_BASE_URL}/api/pending-transactions/${encodeURIComponent(id)}/delete`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { alert(result.error || "Request could not be deleted."); return; }
+  showRequestSubmitted("Your delete request has been submitted.");
+  await loadPendingTransactions();
+}
+
+async function editPendingTransaction(id) {
+  const tx = pendingTransactions.find(item => String(item.id) === String(id));
+  if (!tx) return;
+  const receiver = prompt("Paid to", tx.receiver); if (receiver === null) return;
+  const amount = Number(prompt("Amount", tx.amount)); if (!receiver.trim() || !Number.isFinite(amount) || amount <= 0) { alert("Enter a recipient and positive amount."); return; }
+  const response = await fetch(`${API_BASE_URL}/api/pending-transactions/${encodeURIComponent(id)}/edit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transaction: { receiver: receiver.trim(), amount } }) });
+  const result = await response.json(); if (!response.ok) { alert(result.error || "Request could not be updated."); return; }
+  showRequestSubmitted("Your updated request has been submitted.");
+  await loadPendingTransactions();
 }
 
 async function syncRemoteTransactions() {
@@ -667,6 +813,7 @@ async function addTransaction() {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Transaction could not be submitted for approval.");
+    showRequestSubmitted("Your transaction request has been submitted.");
     if (result.transaction.status === "approved") {
       await loadRemoteTransactions();
       alert("Transaction saved to the ledger.");
@@ -693,6 +840,7 @@ async function addProjectMember() {
   const typedName = newNameInput.value.trim();
   const mobileInput = document.getElementById("projectMemberMobile");
   const mobile = mobileInput.value.trim();
+  const investmentAmount = Number(document.getElementById("projectMemberInvestment").value);
   const label = getMemberTypeLabel(role);
 
   if (!role) {
@@ -730,12 +878,12 @@ async function addProjectMember() {
     memberName = matchingExisting ? matchingExisting.name : typedName;
   }
 
-  if (getAssignedMemberNames(role).some(name => normalizeName(name) === normalizeName(memberName))) {
+  if (role !== "Investor" && getAssignedMemberNames(role).some(name => normalizeName(name) === normalizeName(memberName))) {
     alert(t("projectPage.alertAlreadyAssigned", { memberType: label }));
     return;
   }
 
-  if (typedName && !matchingExisting) {
+  if (typedName && !matchingExisting && role !== "Investor") {
     try {
       await saveProjectMember(memberName, mobile, role);
     } catch (error) {
@@ -760,9 +908,26 @@ async function addProjectMember() {
     }
   }
 
+  if (role === "Investor") {
+    const memberMobile = matchingExisting?.mobile || mobile || collection.find(member => normalizeName(member.name) === normalizeName(memberName))?.mobile;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/investment-requests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: memberName, mobile: memberMobile, amount: investmentAmount }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Investment request could not be submitted.");
+      newNameInput.value = ""; mobileInput.value = ""; document.getElementById("projectMemberInvestment").value = ""; document.getElementById("projectMemberExisting").value = "";
+      await loadInvestments();
+      alert(result.request.status === "approved" ? "Investment recorded." : "Investment request sent for investor approval.");
+    } catch (error) { alert(error.message); }
+    return;
+  }
+
   const projectIndex = projects.findIndex(item => String(item.id) === String(project.id));
 
   if (projectIndex === -1) {
+    return;
+  }
+  if (role === "Investor" && (!Number.isFinite(investmentAmount) || investmentAmount <= 0)) {
+    alert("Enter a positive investment amount for this investor.");
     return;
   }
 
@@ -807,9 +972,15 @@ function renderAll() {
   renderProjectMemberManager();
   renderFilters();
   renderTransactions();
+  renderInvestorHistory();
+  showProjectSection(activeProjectSection);
 }
 
 document.getElementById("addTransactionButton").addEventListener("click", addTransaction);
+document.querySelector(".project-section-nav").addEventListener("click", event => {
+  const button = event.target.closest("[data-project-section-target]");
+  if (button) showProjectSection(button.dataset.projectSectionTarget);
+});
 document.getElementById("addProjectMemberButton").addEventListener("click", addProjectMember);
 document.getElementById("transactionMemberType").addEventListener("change", renderTransactionForm);
 document.getElementById("projectMemberRole").addEventListener("change", renderProjectMemberManager);
@@ -834,9 +1005,9 @@ document
   .getElementById("projectTransactionBody")
   .addEventListener("click", (event) => {
     const button = event.target.closest(".bill-link");
-    if (!button) return;
-
-    openBillPreview(button.dataset.billId);
+    if (button) { openBillPreview(button.dataset.billId); return; }
+    const deleteButton = event.target.closest(".delete-ledger-transaction");
+    if (deleteButton) requestLedgerDeletion(deleteButton.dataset.deleteLedgerId);
   });
 
 document.getElementById("pendingApprovalList").addEventListener("click", event => {
@@ -848,7 +1019,31 @@ document.getElementById("pendingApprovalList").addEventListener("click", event =
   }
   const button = event.target.closest(".approve-transaction");
   if (button) approvePendingTransaction(button.dataset.approvalId);
+  const deleteButton = event.target.closest(".delete-pending-transaction");
+  if (deleteButton) deletePendingTransaction(deleteButton.dataset.deletePendingId);
+  const editButton = event.target.closest(".edit-pending-transaction");
+  if (editButton) editPendingTransaction(editButton.dataset.editPendingId);
 });
+document.getElementById("pendingInvestmentList").addEventListener("click", event => {
+  const button = event.target.closest(".approve-investment");
+  if (button) approvePendingInvestment(button.dataset.investmentApprovalId);
+});
+document.getElementById("projectInvestorList").addEventListener("click", event => {
+  const addButton = event.target.closest("[data-add-investment-for]");
+  if (addButton) {
+    event.stopPropagation();
+    openAddInvestmentModal(addButton.dataset.addInvestmentFor);
+    return;
+  }
+  const card = event.target.closest("[data-investor-history]");
+  if (!card) return;
+  selectedInvestorForHistory = card.dataset.investorHistory;
+  renderInvestorHistory();
+});
+document.getElementById("addInvestmentModalClose").addEventListener("click", closeAddInvestmentModal);
+document.getElementById("submitInvestmentRequest").addEventListener("click", submitInvestmentRequest);
+document.getElementById("addInvestmentAmount").addEventListener("keydown", event => { if (event.key === "Enter") submitInvestmentRequest(); });
+document.getElementById("addInvestmentModal").addEventListener("click", event => { if (event.target.id === "addInvestmentModal") closeAddInvestmentModal(); });
 
 document
   .getElementById("billPreviewClose")
@@ -872,6 +1067,7 @@ hydrateWorkspaceFromDatabase(API_BASE_URL)
     return loadRemoteTransactions();
   })
   .then(loadPendingTransactions)
+  .then(loadInvestments)
   .then(renderAll)
   .catch(error => {
     console.warn("Saved workspace restore skipped.", error);
@@ -879,3 +1075,4 @@ hydrateWorkspaceFromDatabase(API_BASE_URL)
   });
 
 window.setInterval(loadPendingTransactions, 15000);
+window.setInterval(loadInvestments, 15000);

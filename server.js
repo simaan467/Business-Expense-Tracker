@@ -100,6 +100,10 @@ async function ensureSchema() {
       PRIMARY KEY (project_id, member_mobile)
     )
   `);
+  // Confirmed capital is separate from expenses so the available balance is
+  // always derived from approved records.
+  await pool.query(`CREATE TABLE IF NOT EXISTS investments (id text PRIMARY KEY, project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE, investor_mobile text NOT NULL, investor_name text NOT NULL, amount numeric(14,2) NOT NULL CHECK (amount > 0), created_at timestamptz NOT NULL DEFAULT now())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS pending_investments (id text PRIMARY KEY, project_id text NOT NULL REFERENCES projects(id) ON DELETE CASCADE, investor_mobile text NOT NULL, investor_name text NOT NULL, amount numeric(14,2) NOT NULL CHECK (amount > 0), is_new_investor boolean NOT NULL DEFAULT false, proposer_mobile text NOT NULL, proposer_name text NOT NULL, eligible_approvers jsonb NOT NULL DEFAULT '[]'::jsonb, approved_by jsonb NOT NULL DEFAULT '[]'::jsonb, required_approvals integer NOT NULL, status text NOT NULL DEFAULT 'pending', created_at timestamptz NOT NULL DEFAULT now(), approved_at timestamptz)`);
   // A deletion is a separate, auditable approval workflow.  The project is
   // removed only once N - 1 of its assigned investors have approved it.
   await pool.query(`
@@ -112,6 +116,7 @@ async function ensureSchema() {
       created_at timestamptz NOT NULL DEFAULT now()
     )
   `);
+  await pool.query(`CREATE TABLE IF NOT EXISTS pending_transaction_deletions (transaction_id text PRIMARY KEY REFERENCES transactions(id) ON DELETE CASCADE, project text NOT NULL, requested_by_name text NOT NULL, eligible_approvers jsonb NOT NULL DEFAULT '[]'::jsonb, approved_by jsonb NOT NULL DEFAULT '[]'::jsonb, required_approvals integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS password_reset_otps (
       email text PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
@@ -186,6 +191,15 @@ function toPendingClient(row) {
     approvedAt: row.approved_at instanceof Date ? row.approved_at.toISOString() : row.approved_at || null
   };
 }
+function toInvestmentClient(row) { return { id: row.id, projectId: row.project_id, investorMobile: row.investor_mobile, investorName: row.investor_name, amount: Number(row.amount), createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at }; }
+function toPendingInvestmentClient(row) { return { ...toInvestmentClient(row), isNewInvestor: row.is_new_investor, proposerName: row.proposer_name, eligibleApprovers: Array.isArray(row.eligible_approvers) ? row.eligible_approvers : [], approvedBy: Array.isArray(row.approved_by) ? row.approved_by : [], requiredApprovals: Number(row.required_approvals), status: row.status }; }
+async function finalizePendingInvestment(client, row) {
+  if (row.is_new_investor) {
+    await client.query("insert into project_members (mobile,name,role) values ($1,$2,'Investor') on conflict (mobile) do update set name=excluded.name, role='Investor'", [row.investor_mobile, row.investor_name]);
+    await client.query("insert into project_assignments (project_id,member_mobile,member_name,role) values ($1,$2,$3,'Investor') on conflict (project_id,member_mobile) do update set member_name=excluded.member_name, role='Investor'", [row.project_id, row.investor_mobile, row.investor_name]);
+  }
+  await client.query("insert into investments (id,project_id,investor_mobile,investor_name,amount,created_at) values ($1,$2,$3,$4,$5,$6) on conflict (id) do nothing", [row.id, row.project_id, row.investor_mobile, row.investor_name, row.amount, row.created_at]);
+}
 async function saveTransaction(tx, update) {
   const sql = update ? "insert into transactions (id, project, member_type, member_name, investor, supervisor, receiver, amount, bill_name, bill_type, bill_data_url, created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) on conflict (id) do update set project=excluded.project, member_type=excluded.member_type, member_name=excluded.member_name, investor=excluded.investor, supervisor=excluded.supervisor, receiver=excluded.receiver, amount=excluded.amount, bill_name=excluded.bill_name, bill_type=excluded.bill_type, bill_data_url=excluded.bill_data_url, created_at=excluded.created_at" : "insert into transactions (id, project, member_type, member_name, investor, supervisor, receiver, amount, bill_name, bill_type, bill_data_url, created_at) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) on conflict (id) do nothing";
   await pool.query(sql, [tx.id, tx.project, tx.memberType, tx.memberName, tx.investor || "", tx.supervisor || "", tx.receiver, tx.amount, tx.billImage?.name || null, tx.billImage?.type || null, tx.billImage?.dataUrl || null, tx.createdAt || new Date().toISOString()]);
@@ -207,6 +221,77 @@ async function handleApi(req, res, url) {
   const isPublicAuthRoute = req.method === "POST" && ["/api/auth/register", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password"].includes(url.pathname);
   const currentUser = isPublicAuthRoute ? null : getAuthenticatedUser(req);
   if (!isPublicAuthRoute && !currentUser) { sendJson(res, 401, { error: "Please sign in again." }); return; }
+  if (req.method === "GET" && /^\/api\/projects\/[^/]+\/investments$/.test(url.pathname)) {
+    const projectId = decodeURIComponent(url.pathname.split("/")[3]);
+    const access = await canAccessProject(currentUser, projectId);
+    if (!access.rows.length) { sendJson(res, 403, { error: "You are not assigned to this project." }); return; }
+    const result = await pool.query("select * from investments where project_id=$1 order by created_at asc", [projectId]);
+    sendJson(res, 200, result.rows.map(toInvestmentClient)); return;
+  }
+  if (req.method === "GET" && /^\/api\/projects\/[^/]+\/pending-investments$/.test(url.pathname)) {
+    const projectId = decodeURIComponent(url.pathname.split("/")[3]);
+    const access = await canAccessProject(currentUser, projectId);
+    if (!access.rows.length) { sendJson(res, 403, { error: "You are not assigned to this project." }); return; }
+    const result = await pool.query("select * from pending_investments where project_id=$1 and status='pending' order by created_at asc", [projectId]);
+    sendJson(res, 200, result.rows.map(toPendingInvestmentClient)); return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/approval-notifications") {
+    const canApprove = row => {
+      const eligible = Array.isArray(row.eligible_approvers) ? row.eligible_approvers : [];
+      const approved = Array.isArray(row.approved_by) ? row.approved_by : [];
+      const name = currentUser.name.toLowerCase();
+      return eligible.some(item => String(item).toLowerCase() === name)
+        && !approved.some(item => String(item).toLowerCase() === name);
+    };
+    const [transactionRequests, investmentRequests] = await Promise.all([
+      pool.query("select p.id as project_id, pt.eligible_approvers, pt.approved_by from pending_transactions pt join projects p on p.name=pt.project join project_assignments a on a.project_id=p.id where a.member_mobile=$1 and pt.status='pending'", [currentUser.mobile]),
+      pool.query("select p.id as project_id, pi.eligible_approvers, pi.approved_by from pending_investments pi join projects p on p.id=pi.project_id join project_assignments a on a.project_id=p.id where a.member_mobile=$1 and pi.status='pending'", [currentUser.mobile])
+    ]);
+    const counts = new Map();
+    [...transactionRequests.rows, ...investmentRequests.rows].filter(canApprove).forEach(row => {
+      counts.set(row.project_id, (counts.get(row.project_id) || 0) + 1);
+    });
+    sendJson(res, 200, Array.from(counts, ([projectId, count]) => ({ projectId, count }))); return;
+  }
+  if (req.method === "POST" && /^\/api\/projects\/[^/]+\/investment-requests$/.test(url.pathname)) {
+    const projectId = decodeURIComponent(url.pathname.split("/")[3]);
+    const body = JSON.parse(await readBody(req));
+    const name = String(body.name || "").trim(), mobile = String(body.mobile || "").trim(), amount = Number(body.amount);
+    const access = await canAccessProject(currentUser, projectId);
+    if (!access.rows.length || currentUser.role !== "Investor") { sendJson(res, 403, { error: "Only an assigned investor can submit an investment request." }); return; }
+    if (!name || !mobile || !Number.isFinite(amount) || amount <= 0) { sendJson(res, 400, { error: "Investor name, mobile number, and a positive amount are required." }); return; }
+    const assigned = await pool.query("select * from project_assignments where project_id=$1 and member_mobile=$2", [projectId, mobile]);
+    const isNew = !assigned.rows.length;
+    if (!isNew && assigned.rows[0].role !== "Investor") { sendJson(res, 400, { error: "That member is not an investor on this project." }); return; }
+    const approvers = await pool.query("select member_name from project_assignments where project_id=$1 and role='Investor' and member_mobile<>$2", [projectId, currentUser.mobile]);
+    const eligible = approvers.rows.map(row => row.member_name);
+    const required = Math.ceil(eligible.length / 2);
+    const id = randomUUID();
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("insert into pending_investments (id,project_id,investor_mobile,investor_name,amount,is_new_investor,proposer_mobile,proposer_name,eligible_approvers,required_approvals,status) values ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11)", [id, projectId, mobile, name, amount, isNew, currentUser.mobile, currentUser.name, JSON.stringify(eligible), required, required === 0 ? "approved" : "pending"]);
+      const result = await client.query("select * from pending_investments where id=$1 for update", [id]);
+      if (result.rows[0].status === "approved") await finalizePendingInvestment(client, result.rows[0]);
+      await client.query("COMMIT"); sendJson(res, 201, { ok: true, request: toPendingInvestmentClient(result.rows[0]) });
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+    return;
+  }
+  if (req.method === "POST" && /^\/api\/pending-investments\/[^/]+\/approve$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN"); const result = await client.query("select * from pending_investments where id=$1 for update", [id]); const row = result.rows[0];
+      if (!row || row.status !== "pending") { sendJson(res, 404, { error: "Pending investment request not found." }); await client.query("ROLLBACK"); return; }
+      const eligible = Array.isArray(row.eligible_approvers) ? row.eligible_approvers : [], approvedBy = Array.isArray(row.approved_by) ? row.approved_by : [];
+      const access = await client.query("select 1 from project_assignments where project_id=$1 and member_mobile=$2 and role='Investor'", [row.project_id, currentUser.mobile]);
+      if (!access.rows.length || !eligible.some(name => name.toLowerCase() === currentUser.name.toLowerCase()) || approvedBy.some(name => name.toLowerCase() === currentUser.name.toLowerCase())) { sendJson(res, 403, { error: "You cannot approve this investment request." }); await client.query("ROLLBACK"); return; }
+      approvedBy.push(currentUser.name); const approved = approvedBy.length >= row.required_approvals;
+      const updated = await client.query("update pending_investments set approved_by=$2::jsonb,status=$3,approved_at=case when $3='approved' then now() else null end where id=$1 returning *", [id, JSON.stringify(approvedBy), approved ? "approved" : "pending"]);
+      if (approved) await finalizePendingInvestment(client, updated.rows[0]); await client.query("COMMIT"); sendJson(res, 200, { ok: true, request: toPendingInvestmentClient(updated.rows[0]) });
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/pending-transactions") {
     const project = url.searchParams.get("project");
     if (project) {
@@ -218,6 +303,42 @@ async function handleApi(req, res, url) {
       project ? [project] : [currentUser.mobile]
     );
     sendJson(res, 200, result.rows.map(toPendingClient));
+    return;
+  }
+  if (req.method === "POST" && /^\/api\/pending-transactions\/[^/]+\/(edit|delete)$/.test(url.pathname)) {
+    const [, id, action] = url.pathname.match(/^\/api\/pending-transactions\/([^/]+)\/(edit|delete)$/);
+    const body = action === "edit" ? JSON.parse(await readBody(req)) : {};
+    const result = await pool.query("select * from pending_transactions where id=$1 and status='pending'", [decodeURIComponent(id)]);
+    const row = result.rows[0];
+    if (!row) { sendJson(res, 404, { error: "Pending request not found." }); return; }
+    if (row.proposer_name.toLowerCase() !== String(currentUser.name).toLowerCase()) { sendJson(res, 403, { error: "Only the sender can change a pending request." }); return; }
+    if (action === "delete") { await pool.query("delete from pending_transactions where id=$1", [row.id]); sendJson(res, 200, { ok: true }); return; }
+    const tx = body.transaction || {};
+    if (!tx.receiver || !Number.isFinite(Number(tx.amount)) || Number(tx.amount) <= 0) { sendJson(res, 400, { error: "A recipient and positive amount are required." }); return; }
+    const updated = await pool.query("update pending_transactions set receiver=$2,amount=$3,bill_name=$4,bill_type=$5,bill_data_url=$6,approved_by='[]'::jsonb where id=$1 returning *", [row.id, tx.receiver, tx.amount, tx.billImage?.name || row.bill_name, tx.billImage?.type || row.bill_type, tx.billImage?.dataUrl || row.bill_data_url]);
+    sendJson(res, 200, { ok: true, transaction: toPendingClient(updated.rows[0]) }); return;
+  }
+  if (req.method === "POST" && /^\/api\/transactions\/[^/]+\/deletion-request$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]); const txResult = await pool.query("select * from transactions where id=$1", [id]); const tx = txResult.rows[0];
+    if (!tx) { sendJson(res, 404, { error: "Transaction not found." }); return; }
+    const access = await pool.query("select p.id from projects p join project_assignments a on a.project_id=p.id where p.name=$1 and a.member_mobile=$2", [tx.project, currentUser.mobile]);
+    if (!access.rows.length) { sendJson(res, 403, { error: "You are not assigned to this project." }); return; }
+    const approvers = await pool.query("select member_name from project_assignments where project_id=$1 and role='Investor' and member_mobile<>$2", [access.rows[0].id, currentUser.mobile]); const names = approvers.rows.map(row => row.member_name), required = Math.ceil(names.length / 2);
+    await pool.query("insert into pending_transaction_deletions (transaction_id,project,requested_by_name,eligible_approvers,required_approvals) values ($1,$2,$3,$4::jsonb,$5) on conflict (transaction_id) do nothing", [id, tx.project, currentUser.name, JSON.stringify(names), required]);
+    if (required === 0) await pool.query("delete from transactions where id=$1", [id]);
+    sendJson(res, 201, { ok: true, deleted: required === 0 }); return;
+  }
+  if (req.method === "POST" && /^\/api\/transactions\/[^/]+\/deletion-request\/approve$/.test(url.pathname)) {
+    const id = decodeURIComponent(url.pathname.split("/")[3]); const client = await pool.connect();
+    try {
+      await client.query("BEGIN"); const result = await client.query("select * from pending_transaction_deletions where transaction_id=$1 for update", [id]); const row = result.rows[0];
+      if (!row) { sendJson(res, 404, { error: "Deletion request not found." }); await client.query("ROLLBACK"); return; }
+      const eligible = Array.isArray(row.eligible_approvers) ? row.eligible_approvers : [], approved = Array.isArray(row.approved_by) ? row.approved_by : [];
+      if (!eligible.some(name => name.toLowerCase() === currentUser.name.toLowerCase()) || approved.some(name => name.toLowerCase() === currentUser.name.toLowerCase())) { sendJson(res, 403, { error: "You cannot approve this deletion." }); await client.query("ROLLBACK"); return; }
+      approved.push(currentUser.name); const complete = approved.length >= row.required_approvals;
+      await client.query("update pending_transaction_deletions set approved_by=$2::jsonb where transaction_id=$1", [id, JSON.stringify(approved)]);
+      if (complete) await client.query("delete from transactions where id=$1", [id]); await client.query("COMMIT"); sendJson(res, 200, { ok: true, deleted: complete });
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/project-members") {
@@ -252,6 +373,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/projects") {
     const result = await pool.query(`
       select p.id, p.name, p.created_at,
+        coalesce((select sum(i.amount) from investments i where i.project_id=p.id), 0) as total_invested,
         coalesce(json_agg(json_build_object('name', a.member_name, 'mobile', a.member_mobile, 'role', a.role)) filter (where a.member_mobile is not null), '[]'::json) as members
       from projects p join project_assignments mine on mine.project_id=p.id and mine.member_mobile=$1
       left join project_assignments a on a.project_id=p.id
@@ -260,6 +382,7 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, result.rows.map(row => ({
       id: row.id, name: row.name,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+      totalInvested: Number(row.total_invested),
       investorNames: row.members.filter(member => member.role === "Investor").map(member => member.name),
       supervisorNames: row.members.filter(member => member.role === "Supervisor").map(member => member.name),
       members: row.members
@@ -267,7 +390,7 @@ async function handleApi(req, res, url) {
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/projects") {
-    const { project, members } = JSON.parse(await readBody(req));
+    const { project, members, investments: initialInvestments = [] } = JSON.parse(await readBody(req));
     if (!project?.id || !project?.name || !Array.isArray(members) || !members.length) {
       sendJson(res, 400, { error: "Project details and at least one member are required." }); return;
     }
@@ -281,6 +404,12 @@ async function handleApi(req, res, url) {
         if (!member?.name || !member?.mobile || !["Investor", "Supervisor"].includes(member.role)) throw new Error("Every project member needs name, mobile number, and role.");
         await client.query("insert into project_members (mobile,name,role) values ($1,$2,$3) on conflict (mobile) do update set name=excluded.name, role=excluded.role", [member.mobile, member.name, member.role]);
         await client.query("insert into project_assignments (project_id,member_mobile,member_name,role) values ($1,$2,$3,$4) on conflict (project_id,member_mobile) do update set member_name=excluded.member_name, role=excluded.role", [project.id, member.mobile, member.name, member.role]);
+      }
+      for (const investment of initialInvestments) {
+        const amount = Number(investment.amount);
+        const investor = assignedMembers.find(member => member.role === "Investor" && member.mobile === investment.mobile);
+        if (!investor || !Number.isFinite(amount) || amount <= 0) throw new Error("Every initial investor contribution must have a positive amount.");
+        await client.query("insert into investments (id,project_id,investor_mobile,investor_name,amount,created_at) values ($1,$2,$3,$4,$5,$6) on conflict (id) do nothing", [randomUUID(), project.id, investor.mobile, investor.name, amount, project.createdAt || new Date().toISOString()]);
       }
       await client.query("COMMIT");
       sendJson(res, 201, { ok: true });

@@ -20,6 +20,75 @@
   --radius-md: 16px;
 }
 
+.request-success-toast {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .8rem 1rem;
+  border-radius: .7rem;
+  background: #166534;
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(0,0,0,.22);
+}
+.request-success-toast[hidden] { display: none !important; }
+.request-success-toast > span:first-child { font-size: 1.2rem; font-weight: 800; }
+
+.project-section-nav {
+  display: flex;
+  gap: .65rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+  padding: .2rem 0 .55rem;
+  scrollbar-width: thin;
+}
+.project-section-nav button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: .65rem .85rem;
+  border: 1px solid #d1d5db;
+  border-radius: .6rem;
+  background: #fff;
+  color: #334155;
+}
+.project-section-nav button.is-active { background: #0f766e; color: #fff; border-color: #0f766e; }
+.project-navigator-intro { flex-basis: 100%; }
+.project-navigator-intro h2 { margin: .1rem 0 .35rem; }
+.project-section-nav:has(.project-navigator-intro:not([hidden])) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+  padding: 1.25rem;
+  border-radius: .9rem;
+  background: #f8fafc;
+}
+.project-section-nav:has(.project-navigator-intro:not([hidden])) .project-navigator-intro { grid-column: 1 / -1; }
+.project-section-nav:has(.project-navigator-intro:not([hidden])) button { width: 100%; min-height: 3.3rem; white-space: normal; text-align: left; }
+
+/* Keep every project header concise so the section navigator is immediately visible. */
+.hero-banner.hero-banner-projects { padding: 16px 20px; margin-bottom: 12px; align-items: center; }
+.hero-banner.hero-banner-projects .hero-copy h1 { margin: 0 0 4px; font-size: clamp(1.35rem, 3vw, 2rem); }
+.hero-banner.hero-banner-projects .hero-copy p { margin: 0; line-height: 1.35; font-size: .9rem; }
+.hero-banner.hero-banner-projects .eyebrow { margin-bottom: 5px; }
+.hero-banner.hero-banner-projects .hero-actions { gap: 8px; }
+.project-section[hidden] { display: none !important; }
+
+@media (max-width: 640px) {
+  .app-shell { padding-inline: .8rem; }
+  .hero-banner { padding: 1rem; }
+  .hero-actions, .nav-pills { flex-wrap: wrap; }
+  .project-section-nav { margin-inline: -.1rem; }
+  .project-section-nav button { font-size: .82rem; padding: .58rem .7rem; }
+  .project-section-nav:has(.project-navigator-intro:not([hidden])) { grid-template-columns: 1fr; padding: 1rem; }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-card strong { font-size: 1.25rem; }
+  .action-row, .action-cluster { flex-wrap: wrap; }
+  .approval-heading { gap: .5rem; flex-wrap: wrap; }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -241,6 +310,49 @@ a {
   grid-template-columns: 1.1fr 0.9fr;
 }
 
+.project-section-switcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.project-section-button {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.76);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.project-section-button strong { font-size: 1.1rem; }
+.project-section-button small { color: var(--muted); }
+
+.project-section-button.is-active {
+  border-color: #0b5d9d;
+  background: linear-gradient(135deg, #0f6eae, #084c84);
+  color: #fff;
+}
+
+.project-section-button.is-active small,
+.project-section-button.is-active .eyebrow {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.project-section-view[hidden] { display: none; }
+
+.project-create-action {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.project-create-action small { color: var(--muted); }
+
 .panel {
   padding: 24px;
   margin-bottom: 22px;
@@ -461,11 +573,51 @@ button:disabled {
   gap: 18px;
 }
 
+.project-browser.project-list-only { grid-template-columns: minmax(0, 1fr); }
+
 .project-list {
   display: grid;
   gap: 10px;
   align-content: start;
 }
+
+.project-list-row { display: flex; align-items: stretch; gap: 8px; }
+.project-list-row .project-list-item { flex: 1; }
+.project-list-row.is-active .project-list-item {
+  border-color: rgba(17, 75, 95, 0.32);
+  background: linear-gradient(135deg, rgba(17, 75, 95, 0.12), rgba(255, 255, 255, 0.92)), rgba(255, 255, 255, 0.9);
+}
+.notification-icon {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1.1rem;
+}
+.notification-count {
+  position: absolute;
+  top: -6px;
+  right: -7px;
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #c2410c;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.project-approval-notification { align-self: center; border-color: var(--line-strong); background: #fff; color: var(--primary-deep); }
+.project-approval-notification .notification-count { border-color: #fff; }
 
 .project-detail {
   min-width: 0;
@@ -498,6 +650,12 @@ button:disabled {
 .project-list-item span {
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+.project-list-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 12px;
 }
 
 .project-list-item.is-active {
@@ -714,7 +872,7 @@ button:disabled {
 
 .transaction-table {
   width: 100%;
-  min-width: 720px;
+  min-width: 800px;
   border-collapse: collapse;
 }
 
@@ -740,6 +898,11 @@ button:disabled {
 .transaction-table tbody tr:hover {
   background: rgba(17, 75, 95, 0.04);
 }
+
+.transaction-table th:last-child,
+.transaction-table td:last-child { min-width: 190px; }
+.ledger-bill-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ledger-bill-actions button { min-height: 40px; padding: 8px 14px; box-shadow: none; }
 
 .table-empty-row td {
   border-bottom: none;
@@ -839,6 +1002,7 @@ button:disabled {
 
   .content-grid,
   .content-grid-tight,
+  .project-section-switcher,
   .stat-grid,
   .form-grid,
   .project-browser,
@@ -932,9 +1096,9 @@ button:disabled {
 .bill-modal[hidden] { display: none; }
 .bill-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 22px; background: rgba(10, 20, 28, 0.72); }
 .bill-modal-panel { width: min(920px, 100%); max-height: 92vh; display: grid; gap: 14px; padding: 18px; border-radius: 18px; background: var(--surface-strong); box-shadow: var(--shadow); }
-.bill-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.bill-modal-head h2 { font-size: 1.2rem; }
-.bill-modal-close { min-height: 40px; padding: 9px 13px; }
+.bill-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
+.bill-modal-head h2 { min-width: 0; overflow-wrap: anywhere; font-size: 1.2rem; }
+.bill-modal-close { flex: 0 0 auto; min-height: 40px; padding: 9px 13px; }
 #billPreviewImage { width: 100%; max-height: 76vh; object-fit: contain; border-radius: 12px; background: #fff; }
 
 .db-status { flex-basis: 100%; font-weight: 700; }
@@ -945,6 +1109,31 @@ button:disabled {
 .approval-details { flex: 1; min-width: 0; }
 .approval-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; margin-bottom: 14px; }
 .approval-heading h3 { margin: 3px 0 0; font-size: 1.15rem; }
+.member-card .approval-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+.member-card .approval-heading h3 {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+  line-height: 1.15;
+}
+.member-card .add-investment-button {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: 0;
+  padding: .7rem .9rem;
+  line-height: 1.15;
+  white-space: normal;
+}
+@media (max-width: 480px) {
+  .member-card .approval-heading { grid-template-columns: 1fr; }
+  .member-card .add-investment-button { max-width: none; width: 100%; }
+}
 .approval-amount { color: var(--primary-deep); font-size: 1.2rem; white-space: nowrap; }
 .approval-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin: 0; }
 .approval-meta div { min-width: 0; }
@@ -954,9 +1143,37 @@ button:disabled {
 .approval-bill-preview { display: inline-flex; width: auto; height: auto; padding: 6px 10px 6px 6px; align-items: center; gap: 10px; border: 1px solid var(--line-strong); border-radius: 12px; background: #fff; color: var(--primary-deep); font-size: .9rem; }
 .approval-bill-preview img { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; }
 .approval-no-bill { color: var(--muted); font-size: .9rem; }
-.approval-actions { display: flex; align-items: center; }
+.approval-actions { display: flex; align-items: center; gap: 8px; }
 .approval-card button { white-space: nowrap; }
 .notification-badge { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--danger); color: #fff; font-size: .78rem; font-weight: 700; }
 .delete-project-modal-panel { width: min(520px, 100%); }
 .delete-project-countdown { font-size: 1.1rem; font-weight: 800; color: var(--danger); }
-@media (max-width: 600px) { .approval-card { align-items: stretch; flex-direction: column; } .approval-meta { grid-template-columns: 1fr; } .approval-actions { justify-content: stretch; } .approval-actions button { width: 100%; } }
+@media (max-width: 800px) {
+  .approval-card { align-items: stretch; flex-direction: column; }
+  .approval-meta { grid-template-columns: 1fr; }
+  .approval-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); align-items: stretch; }
+  .approval-actions button,
+  .approval-actions .chip { width: 100%; min-height: 46px; display: inline-flex; align-items: center; justify-content: center; }
+}
+
+@media (max-width: 600px) {
+  .bill-modal { padding: 12px; align-items: start; overflow-y: auto; }
+  .bill-modal-panel { max-height: none; margin: 12px 0; padding: 16px; }
+  .bill-modal-head { align-items: flex-start; gap: 10px; }
+  .bill-modal-head h2 { font-size: 1rem; line-height: 1.25; }
+  .bill-modal-close { min-height: 38px; padding: 8px 11px; }
+}
+
+/* Keep the ledger controls concise, even on tablet-sized screens. */
+.quick-view-panel { padding: 18px 24px; }
+.quick-view-panel .panel-head { margin-bottom: 12px; }
+.quick-view-panel .panel-head h2 { font-size: 1.6rem; }
+.quick-view-panel .eyebrow { margin-bottom: 5px; }
+.quick-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.quick-filter-grid .field { gap: 6px; }
+.quick-filter-grid select { min-height: 46px; padding: 10px 12px; }
+
+@media (max-width: 640px) {
+  .quick-view-panel { padding: 16px; }
+  .quick-filter-grid { grid-template-columns: 1fr; }
+}

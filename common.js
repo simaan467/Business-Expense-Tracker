@@ -154,7 +154,7 @@ const TRANSLATIONS = Object.freeze({
         `${count} assigned ${count === 1 ? "investor" : "investors"}`,
       projectAssignedSupervisorsChip: ({ count }) =>
         `${count} assigned ${count === 1 ? "supervisor" : "supervisors"}`,
-      projectPageValue: "Own members and filters",
+      projectPageValue: "",
       alertEnterInvestorName: "Please enter investor name.",
       alertInvestorExists: "That investor already exists."
     },

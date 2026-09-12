@@ -6,6 +6,7 @@ let activeProjectId = "";
 let deletionRequests = [];
 let deletionTargetId = "";
 let deletionCountdownTimer = null;
+let approvalCounts = new Map();
 const selectedNewProjectInvestors = new Set();
 const selectedNewProjectSupervisors = new Set();
 const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
@@ -95,10 +96,10 @@ async function loadRemoteProjects() {
   } catch (error) { console.warn("Remote project load skipped.", error); }
 }
 
-async function saveRemoteProject(project, members) {
+async function saveRemoteProject(project, members, initialInvestments = []) {
   const response = await fetch(API_BASE_URL + "/api/projects", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project, members })
+    body: JSON.stringify({ project, members, investments: initialInvestments })
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Project could not be saved to the database.");
@@ -110,16 +111,19 @@ async function loadDeletionRequests() {
   deletionRequests = await response.json();
 }
 
-function getActiveProject() {
-  return projects.find(project => String(project.id) === String(activeProjectId));
+async function loadApprovalNotifications() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/approval-notifications`, { cache: "no-store" });
+    if (!response.ok) throw new Error("Approval notifications are unavailable.");
+    approvalCounts = new Map((await response.json()).map(item => [String(item.projectId), Number(item.count) || 0]));
+  } catch (error) {
+    console.warn(error.message);
+    approvalCounts = new Map();
+  }
 }
 
-function renderProjectOverview() {
-  document.getElementById("projectCount").textContent = projects.length;
-  document.getElementById("entryCount").textContent = transactions.length;
-  document.getElementById("projectSpend").textContent = formatCurrency(
-    sumTransactions(transactions)
-  );
+function getActiveProject() {
+  return projects.find(project => String(project.id) === String(activeProjectId));
 }
 
 function createDynamicMemberField(containerId, role, value = "", mobile = "") {
@@ -143,6 +147,16 @@ function createDynamicMemberField(containerId, role, value = "", mobile = "") {
       value="${escapeHtml(mobile)}"
       aria-label="${escapeHtml(memberType)} mobile number"
     />
+    ${role === "investor" ? `
+      <input
+        type="number"
+        data-new-investor-amount
+        placeholder="Investment amount"
+        min="0.01"
+        step="0.01"
+        aria-label="Investment amount"
+      />
+    ` : ""}
     <button type="button" class="button-secondary button-inline-remove" data-remove-row>
       ${escapeHtml(t("common.remove"))}
     </button>
@@ -151,7 +165,19 @@ function createDynamicMemberField(containerId, role, value = "", mobile = "") {
   container.appendChild(field);
   field.querySelector("[data-remove-row]").addEventListener("click", () => {
     field.remove();
+    updateCreateProjectButtonState();
   });
+  field.querySelectorAll("input").forEach(input => input.addEventListener("input", updateCreateProjectButtonState));
+}
+
+function updateCreateProjectButtonState() {
+  const name = document.getElementById("projectName")?.value.trim();
+  const hasNewInvestor = readDynamicMembers("investor").some(member =>
+    member.name && member.mobile && Number.isFinite(member.amount) && member.amount > 0
+  );
+  const hasNewSupervisor = readDynamicMembers("supervisor").some(member => member.name && member.mobile);
+  const hasSelectedMember = selectedNewProjectInvestors.size > 0 || selectedNewProjectSupervisors.size > 0;
+  document.getElementById("addProjectButton").disabled = !(name && (hasSelectedMember || hasNewInvestor || hasNewSupervisor));
 }
 
 function renderCreateProjectMembers() {
@@ -160,25 +186,8 @@ function renderCreateProjectMembers() {
   const investorInputs = document.getElementById("newProjectInvestorInputs");
   const supervisorInputs = document.getElementById("newProjectSupervisorInputs");
   const helper = document.getElementById("addProjectHelper");
-  const addButton = document.getElementById("addProjectButton");
 
-  investorOptions.innerHTML = investors.length
-    ? investors.map(investor => `
-        <label class="choice-pill">
-          <input
-            type="checkbox"
-            data-new-project-investor
-            value="${escapeHtml(investor.name)}"
-            ${selectedNewProjectInvestors.has(investor.name) ? "checked" : ""}
-          />
-          <span>${escapeHtml(investor.name)}</span>
-        </label>
-      `).join("")
-    : `
-      <div class="empty-table-state">
-        ${escapeHtml(t("projectsPage.noExistingInvestors"))}
-      </div>
-    `;
+  investorOptions.innerHTML = "";
 
   supervisorOptions.innerHTML = supervisors.length
     ? supervisors.map(supervisor => `
@@ -203,27 +212,20 @@ function renderCreateProjectMembers() {
   createDynamicMemberField("newProjectInvestorInputs", "investor");
   createDynamicMemberField("newProjectSupervisorInputs", "supervisor");
 
-  investorOptions.querySelectorAll("[data-new-project-investor]").forEach(input => {
-    input.addEventListener("change", () => input.checked
-      ? selectedNewProjectInvestors.add(input.value)
-      : selectedNewProjectInvestors.delete(input.value));
-  });
   supervisorOptions.querySelectorAll("[data-new-project-supervisor]").forEach(input => {
-    input.addEventListener("change", () => input.checked
-      ? selectedNewProjectSupervisors.add(input.value)
-      : selectedNewProjectSupervisors.delete(input.value));
+    input.addEventListener("change", () => {
+      input.checked ? selectedNewProjectSupervisors.add(input.value) : selectedNewProjectSupervisors.delete(input.value);
+      updateCreateProjectButtonState();
+    });
   });
 
-  helper.textContent = t("projectsPage.createMixHelper");
-  addButton.disabled = false;
+  helper.textContent = "Add registered investors by mobile number, or provide the details for a new investor.";
+  updateCreateProjectButtonState();
 }
 
 function renderProjects() {
   const projectList = document.getElementById("projectList");
-  const projectDetail = document.getElementById("projectDetail");
   const stats = buildProjectStats(projects, transactions);
-  const activeProject = getActiveProject();
-  const activeStats = stats.find(item => String(item.project.id) === String(activeProjectId));
 
   if (!projects.length) {
     projectList.innerHTML = `
@@ -231,25 +233,32 @@ function renderProjects() {
         ${escapeHtml(t("projectsPage.noProjectsList"))}
       </div>
     `;
-    projectDetail.innerHTML = `
-      <div class="empty-state">
-        ${escapeHtml(t("projectsPage.noProjectsDetail"))}
-      </div>
-    `;
     return;
   }
 
-  projectList.innerHTML = stats.map(item => `
-    <button
-      type="button"
-      class="project-list-item ${String(item.project.id) === String(activeProjectId) ? "is-active" : ""}"
-      data-select-project-id="${escapeHtml(item.project.id)}"
-    >
-      <strong>${escapeHtml(item.project.name)}</strong>
-      <span>${escapeHtml(t("projectsPage.projectListEntries", { count: item.entryCount }))}</span>
-      <span>${formatCurrency(item.total)}</span>
-    </button>
-  `).join("");
+  projectList.innerHTML = stats.map(item => {
+    const pendingCount = approvalCounts.get(String(item.project.id)) || 0;
+    const projectUrl = `project.html?id=${encodeURIComponent(item.project.id)}&section=approvals`;
+    const totalInvested = Number(item.project.totalInvested || 0);
+    const investmentBalance = totalInvested - item.total;
+    return `
+    <article class="project-list-row">
+      <a class="project-list-item" href="project.html?id=${encodeURIComponent(item.project.id)}" aria-label="Open ${escapeHtml(item.project.name)}">
+        <strong>${escapeHtml(item.project.name)}</strong>
+        <div class="project-list-summary">
+          <span>${escapeHtml(t("projectsPage.projectListEntries", { count: item.entryCount }))}</span>
+          <span>${item.assignedInvestorCount} investor${item.assignedInvestorCount === 1 ? "" : "s"}</span>
+          <span>${item.assignedSupervisorCount} supervisor${item.assignedSupervisorCount === 1 ? "" : "s"}</span>
+          <span>Project spend: ${formatCurrency(item.total)}</span>
+          <span>Total invested: ${formatCurrency(totalInvested)}</span>
+          <span>Investment balance: ${formatCurrency(investmentBalance)}</span>
+        </div>
+      </a>
+      <a class="notification-icon project-approval-notification" href="${projectUrl}" aria-label="${pendingCount} pending approval${pendingCount === 1 ? "" : "s"} for ${escapeHtml(item.project.name)}" title="${pendingCount ? `${pendingCount} approval${pendingCount === 1 ? "" : "s"} pending for you` : "No approvals pending for you"}"><span aria-hidden="true">🔔</span><span class="notification-count" ${pendingCount ? "" : "hidden"}>${pendingCount}</span></a>
+    </article>`;
+  }).join("");
+
+  return;
 
   if (!activeProject || !activeStats) {
     projectDetail.innerHTML = `
@@ -259,6 +268,8 @@ function renderProjects() {
     `;
   } else {
     const relatedTransactions = getProjectTransactions(transactions, activeProject.name);
+    const totalInvested = Number(activeProject.totalInvested || 0);
+    const investmentBalance = totalInvested - activeStats.total;
     const deletionRequest = deletionRequests.find(request => String(request.projectId) === String(activeProject.id));
     const currentUser = getCurrentUser();
     const canApproveDeletion = currentUser?.role === "Investor" && deletionRequest && !deletionRequest.approvedBy.includes(currentUser.mobile);
@@ -344,6 +355,8 @@ function renderProjects() {
           <span class="chip">${escapeHtml(t("projectsPage.projectChipSpend", {
             amount: formatCurrency(activeStats.total)
           }))}</span>
+          <span class="chip">Total invested: ${formatCurrency(totalInvested)}</span>
+          <span class="chip">Investment balance: ${formatCurrency(investmentBalance)}</span>
         </div>
 
         ${deletionRequestMarkup}
@@ -395,7 +408,10 @@ function readDynamicMembers(role) {
   return Array.from(document.querySelectorAll(`[data-new-${role}-field]`))
     .map(nameInput => ({
       name: nameInput.value.trim(),
-      mobile: nameInput.parentElement.querySelector(`[data-new-${role}-mobile]`).value.trim()
+      mobile: nameInput.parentElement.querySelector(`[data-new-${role}-mobile]`).value.trim(),
+      amount: role === "investor"
+        ? Number(nameInput.parentElement.querySelector("[data-new-investor-amount]").value)
+        : null
     }))
     .filter(member => member.name || member.mobile);
 }
@@ -413,9 +429,6 @@ async function addProject() {
   const input = document.getElementById("projectName");
   const name = input.value.trim();
   const currentUser = getCurrentUser();
-  const selectedInvestorNames = Array.from(
-    document.querySelectorAll("[data-new-project-investor]:checked")
-  ).map(inputElement => inputElement.value);
   const selectedSupervisorNames = Array.from(
     document.querySelectorAll("[data-new-project-supervisor]:checked")
   ).map(inputElement => inputElement.value);
@@ -434,7 +447,7 @@ async function addProject() {
     supervisorName => !existingSupervisorNames.has(normalizeName(supervisorName))
   );
   const assignedInvestorNames = uniqueStrings([
-    ...selectedInvestorNames,
+    ...selectedNewProjectInvestors,
     ...typedInvestorNames,
     ...(currentUser?.role === "Investor" ? [currentUser.name] : [])
   ]);
@@ -443,6 +456,10 @@ async function addProject() {
     ...typedSupervisorNames,
     ...(currentUser?.role === "Supervisor" ? [currentUser.name] : [])
   ]);
+  const hasExplicitlyAddedMember = selectedNewProjectInvestors.size > 0
+    || selectedNewProjectSupervisors.size > 0
+    || typedInvestors.some(member => member.name && member.mobile && Number.isFinite(member.amount) && member.amount > 0)
+    || typedSupervisors.some(member => member.name && member.mobile);
 
   if (!name) {
     alert(t("projectsPage.alertEnterProjectName"));
@@ -454,8 +471,17 @@ async function addProject() {
     return;
   }
 
-  if (!assignedInvestorNames.length && !assignedSupervisorNames.length) {
-    alert(t("projectsPage.alertNeedOneMember"));
+  if (!hasExplicitlyAddedMember) {
+    alert("Add at least one investor or supervisor before creating this project.");
+    return;
+  }
+
+  if (typedInvestors.some(member => !member.name || !member.mobile || !Number.isFinite(member.amount) || member.amount <= 0)) {
+    alert("Enter a name, mobile number, and investment amount for every new investor.");
+    return;
+  }
+  if (typedSupervisors.some(member => !member.name || !member.mobile)) {
+    alert("Enter both name and mobile number for every new supervisor.");
     return;
   }
 
@@ -499,6 +525,7 @@ async function addProject() {
     id: uid(),
     name,
     createdAt: new Date().toISOString(),
+    totalInvested: typedInvestors.reduce((sum, member) => sum + Number(member.amount || 0), 0),
     investorNames: assignedInvestorNames,
     supervisorNames: assignedSupervisorNames
   };
@@ -512,7 +539,8 @@ async function addProject() {
     return;
   }
   try {
-    await saveRemoteProject(newProject, projectMembers);
+    const initialInvestments = typedInvestors.map(member => ({ mobile: member.mobile, amount: member.amount }));
+    await saveRemoteProject(newProject, projectMembers, initialInvestments);
   } catch (error) {
     alert(error.message);
     return;
@@ -523,7 +551,6 @@ async function addProject() {
   selectedNewProjectInvestors.clear();
   selectedNewProjectSupervisors.clear();
   input.value = "";
-  addProjectButton.style.display = "none";
   refreshState();
   activeProjectId = String(projects.find(project => project.name === name)?.id || activeProjectId);
   window.history.replaceState({}, "", `projects.html?id=${encodeURIComponent(activeProjectId)}`);
@@ -578,7 +605,6 @@ function renderAll() {
   const heading = document.getElementById("projectsHeroTitle");
   const currentUser = getCurrentUser();
   if (heading && currentUser) heading.textContent = `Welcome, ${currentUser.name}`;
-  renderProjectOverview();
   renderCreateProjectMembers();
   renderProjects();
 }
@@ -593,56 +619,36 @@ async function addRegisteredProjectMember() {
     const response = await fetch(`${API_BASE_URL}/api/users/lookup?identifier=${encodeURIComponent(identifier)}`);
     const user = await response.json();
     if (!response.ok) throw new Error(user.error || "User lookup failed.");
-    const isSupervisor = user.role === "Supervisor";
-    const collection = isSupervisor ? supervisors : investors;
+    if (user.role !== "Investor") throw new Error("This mobile number is not registered as an investor.");
+    const collection = investors;
     if (!collection.some(member => normalizeName(member.name) === normalizeName(user.name))) {
       const member = { id: user.id, name: user.name, mobile: user.mobile };
-      if (isSupervisor) { supervisors = [...supervisors, member].sort((a, b) => a.name.localeCompare(b.name)); saveSupervisors(); }
-      else { investors = [...investors, member].sort((a, b) => a.name.localeCompare(b.name)); saveInvestors(); }
+      investors = [...investors, member].sort((a, b) => a.name.localeCompare(b.name));
+      saveInvestors();
     }
-    (isSupervisor ? selectedNewProjectSupervisors : selectedNewProjectInvestors).add(user.name);
+    selectedNewProjectInvestors.add(user.name);
     input.value = "";
-    helper.textContent = `${user.name} added as ${user.role}.`;
+    helper.textContent = `${user.name} was added as an investor.`;
     renderCreateProjectMembers();
   } catch (error) {
     helper.textContent = error.message;
   }
+}
 
-  const newMembers = [
-    ...typedInvestors.map(member => ({ ...member, role: "Investor" })),
-    ...typedSupervisors.map(member => ({ ...member, role: "Supervisor" }))
-  ];
-  if (newMembers.some(member => !member.name || !member.mobile)) {
-    alert("Enter both name and mobile number for every new investor or supervisor.");
-    return;
-  }
-  try {
-    for (const member of newMembers) {
-      const response = await fetch(API_BASE_URL + "/api/project-members", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(member)
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Member could not be saved to the database.");
-    }
-  } catch (error) {
-    alert(error.message);
-    return;
-  }
+function showProjectSection(section) {
+  const isCreate = section === "create";
+  document.getElementById("createProjectSection").hidden = !isCreate;
+  document.getElementById("projectListSection").hidden = isCreate;
+  document.querySelectorAll("[data-project-section]").forEach(button => {
+    button.classList.toggle("is-active", button.dataset.projectSection === section);
+  });
+  if (!isCreate) renderProjects();
 }
 
 const projectInput = document.getElementById("projectName");
 const addProjectButton = document.getElementById("addProjectButton");
 
-// Hide button initially
-addProjectButton.style.display = "none";
-
-// Show/Hide button while typing
-projectInput.addEventListener("input", () => {
-  addProjectButton.style.display =
-    projectInput.value.trim() ? "block" : "none";
-});
+projectInput.addEventListener("input", updateCreateProjectButtonState);
 
 // Click event
 addProjectButton.addEventListener("click", addProject);
@@ -670,15 +676,20 @@ document.getElementById("deleteProjectModal").addEventListener("click", event =>
 document.getElementById("registeredMemberIdentifier").addEventListener("keydown", event => {
   if (event.key === "Enter") { event.preventDefault(); addRegisteredProjectMember(); }
 });
+document.querySelectorAll("[data-project-section]").forEach(button => {
+  button.addEventListener("click", () => showProjectSection(button.dataset.projectSection));
+});
 window.addEventListener("app-languagechange", renderAll);
 
 refreshState();
 renderAll();
+if (new URLSearchParams(window.location.search).get("section") === "list") showProjectSection("list");
 hydrateWorkspaceFromDatabase(API_BASE_URL)
   .then(async () => {
-    await loadDeletionRequests();
+    await Promise.all([loadDeletionRequests(), loadApprovalNotifications()]);
     refreshState();
     renderAll();
+    if (new URLSearchParams(window.location.search).get("section") === "list") showProjectSection("list");
   })
   .catch(error => {
     console.warn("Saved workspace restore skipped.", error);

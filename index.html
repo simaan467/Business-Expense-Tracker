@@ -25,6 +25,11 @@
               Expense Dashboard
           </h1>
 
+          <a class="notification-icon" id="dashboardApprovalNotifications" href="projects.html?section=list" aria-label="Pending approvals" title="Pending approvals">
+              <span aria-hidden="true">🔔</span>
+              <span class="notification-count" id="dashboardApprovalCount" hidden>0</span>
+          </a>
+
           <button id="logoutBtn">
               Logout
           </button>
@@ -58,33 +63,6 @@
         <small data-i18n="dashboard.projectCaption">Each opens on its own page</small>
       </article>
 
-      <article class="stat-card stat-card-highlight">
-        <span class="stat-label" data-i18n="common.overallExpenses">Overall Expenses</span>
-        <strong id="statExpenseTotal">₹0.00</strong>
-        <small id="statExpenseCaption" data-i18n="dashboard.expenseCaption">Across every project page</small>
-      </article>
-    </section>
-
-    <section class="panel panel-accent">
-        <div class="panel-head">
-          <div>
-            <span class="eyebrow eyebrow-soft" data-i18n="common.projectFlow">Project Flow</span>
-            <h2 data-i18n="common.oneProjectAtATime">How to use?</h2>
-          </div>
-          <a class="text-link" href="projects.html" data-i18n="common.manageProjects">Manage projects</a>
-        </div>
-
-        <div class="chip-row">
-          <span class="chip" data-i18n="dashboard.separateProjectPages">multiple project pages</span>
-          <span class="chip" data-i18n="dashboard.ownMembers">easy to keep</span>
-          <span class="chip" data-i18n="dashboard.ownFilters">easy to filter</span>
-        </div>
-
-        <p class="helper-text section-note" data-i18n="dashboard.chooseProjectNote">
-          Choose a project below to open its dedicated page and add entries to it. 
-          If need to create new project go to projects section add new investors
-          and supervisors and crate a project.
-        </p>
     </section>
 
     <section class="panel">

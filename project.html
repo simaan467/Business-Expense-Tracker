@@ -39,7 +39,19 @@
     </header>
 
     <div id="projectPageContent">
-      <section class="stat-grid" data-i18n-aria-label="common.projectOverview" aria-label="Project overview">
+      <nav class="project-section-nav" aria-label="Project sections">
+        <div class="project-navigator-intro" id="projectNavigatorIntro">
+          <span class="eyebrow eyebrow-soft">Project navigator</span>
+          <h2>Choose what you want to manage</h2>
+          <p class="helper-text">Open a section to view project data, add records, or review approvals.</p>
+        </div>
+        <button type="button" class="is-active" data-project-section-target="dashboard">Dashboard</button>
+        <button type="button" data-project-section-target="transaction">Add New Transaction</button>
+        <button type="button" data-project-section-target="members">Add More Members</button>
+        <button type="button" data-project-section-target="approvals">Pending Approvals</button>
+        <button type="button" data-project-section-target="transactions">All Transactions</button>
+      </nav>
+      <section class="stat-grid project-section" data-project-section="dashboard" data-i18n-aria-label="common.projectOverview" aria-label="Project overview">
         <article class="stat-card">
           <span class="stat-label" data-i18n="common.projectInvestors">Project Investors</span>
           <strong id="statProjectInvestorCount">0</strong>
@@ -59,13 +71,23 @@
         </article>
 
         <article class="stat-card stat-card-highlight">
+          <span class="stat-label">Total Invested</span>
+          <strong id="statProjectInvestment">₹0.00</strong>
+          <small>Approved investor contributions</small>
+        </article>
+        <article class="stat-card stat-card-highlight">
           <span class="stat-label" data-i18n="common.projectSpend">Project Spend</span>
           <strong id="statProjectSpend">₹0.00</strong>
           <small id="statProjectSpendCaption" data-i18n="projectPage.spendCaption">All expenses for this project</small>
         </article>
+        <article class="stat-card stat-card-highlight">
+          <span class="stat-label">Investment Balance</span>
+          <strong id="statProjectInvestmentBalance">₹0.00</strong>
+          <small>Available after approved expenses</small>
+        </article>
       </section>
 
-      <section class="content-grid">
+      <section class="content-grid project-section" data-project-section="dashboard">
         <div class="panel">
           <div class="panel-head">
             <div>
@@ -90,7 +112,7 @@
       </section>
 
       <section class="content-grid content-grid-tight">
-        <div class="panel panel-accent">
+        <div class="panel panel-accent project-section" data-project-section="transaction">
           <div class="panel-head">
             <div>
               <span class="eyebrow eyebrow-soft" data-i18n="common.dailyEntry">Daily Entry</span>
@@ -155,7 +177,7 @@
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel project-section" data-project-section="members">
           <div class="panel-head">
             <div>
               <span class="eyebrow eyebrow-soft" data-i18n="common.projectTeam">Project Team</span>
@@ -201,6 +223,10 @@
                 placeholder="Enter mobile number for a new member"
               />
             </label>
+            <label class="field" id="projectMemberInvestmentField">
+              <span>Investment Amount</span>
+              <input type="number" id="projectMemberInvestment" placeholder="0.00" min="0.01" step="0.01" />
+            </label>
           </div>
 
           <div class="action-row">
@@ -210,7 +236,7 @@
         </div>
       </section>
 
-      <section class="panel" id="approvalPanel">
+      <section class="panel project-section" data-project-section="approvals" id="approvalPanel">
         <div class="panel-head">
           <div>
             <span class="eyebrow eyebrow-soft">Approval notifications</span>
@@ -220,9 +246,15 @@
         </div>
         <p class="helper-text section-note">Expenses appear in the ledger only after a majority of the project's investors approve them. The person who submitted an expense cannot approve it.</p>
         <div class="approval-list" id="pendingApprovalList"></div>
+        <div class="approval-list" id="pendingInvestmentList"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel project-section" data-project-section="dashboard" id="investorHistoryPanel">
+        <div class="panel-head"><div><span class="eyebrow eyebrow-soft">Investment records</span><h2 id="investorHistoryTitle">Select an investor to view investments</h2></div></div>
+        <div id="investorHistoryList" class="approval-list"><div class="empty-state">Choose an investor card to see each investment date and amount.</div></div>
+      </section>
+
+      <section class="panel project-section quick-view-panel" data-project-section="transactions">
         <div class="panel-head">
           <div>
             <span class="eyebrow eyebrow-soft" data-i18n="common.quickView">Quick View</span>
@@ -230,7 +262,7 @@
           </div>
         </div>
 
-        <div class="form-grid">
+        <div class="form-grid quick-filter-grid">
           <label class="field">
             <span data-i18n="common.role">Role</span>
             <select id="filterRole">
@@ -254,7 +286,7 @@
         </div>
       </section>
 
-      <section class="panel">
+      <section class="panel project-section" data-project-section="transactions">
         <div class="panel-head">
           <div>
             <span class="eyebrow eyebrow-soft" data-i18n="common.projectLedger">Project Ledger</span>
@@ -297,6 +329,27 @@
       </div>
       <img id="billPreviewImage" alt="Transaction bill" />
     </div>
+  </div>
+
+  <div class="bill-modal" id="addInvestmentModal" hidden>
+    <div class="bill-modal-panel" role="dialog" aria-modal="true" aria-labelledby="addInvestmentModalTitle">
+      <div class="bill-modal-head">
+        <h2 id="addInvestmentModalTitle">Add investment</h2>
+        <button type="button" class="bill-modal-close" id="addInvestmentModalClose">Close</button>
+      </div>
+      <p class="helper-text" id="addInvestmentInvestorName"></p>
+      <label class="field">
+        <span>Investment Amount</span>
+        <input type="number" id="addInvestmentAmount" placeholder="0.00" min="0.01" step="0.01" />
+      </label>
+      <div class="action-row">
+        <button type="button" id="submitInvestmentRequest">Send for approval</button>
+        <p class="helper-text" id="addInvestmentHelper"></p>
+      </div>
+    </div>
+  </div>
+  <div id="requestSuccessToast" class="request-success-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true">✓</span><span id="requestSuccessToastText">Your request has been submitted.</span>
   </div>
 
   <script src="common.js?v=20260627db3"></script>

@@ -37,7 +37,18 @@
       </div>
     </header>
 
-    <section class="content-grid content-grid-tight">
+    <section class="project-section-switcher" aria-label="Projects sections">
+      <button type="button" class="project-section-button is-active" data-project-section="create">
+        <strong>Make a New Project</strong>
+        <small>Add a project and its investors.</small>
+      </button>
+      <button type="button" class="project-section-button" data-project-section="list">
+        <strong>Project List</strong>
+        <small>View and select every project.</small>
+      </button>
+    </section>
+
+    <section class="project-section-view" id="createProjectSection">
       <div class="panel panel-accent">
         <div class="panel-head">
           <div>
@@ -46,7 +57,7 @@
           </div>
         </div>
 
-        <div class="inline-form">
+        <div class="inline-form project-name-form">
           <input
             type="text"
             id="projectName"
@@ -55,25 +66,23 @@
             data-i18n-aria-label="projectsPage.projectNameAria"
             aria-label="Project Name"
           />
-          <button type="button" id="addProjectButton" data-i18n="common.addProject">Add Project</button>
         </div>
-
         <div class="assignment-panel create-assignment-panel">
           <div class="assignment-head">
-            <strong>Add registered project member</strong>
-            <span>Enter their email address or mobile number. Their registered role is used automatically.</span>
+            <strong>Add existing investor</strong>
+            <span>Enter the investor's registered mobile number to add them to this project.</span>
           </div>
           <div class="inline-form">
-            <input type="text" id="registeredMemberIdentifier" placeholder="Email address or mobile number" />
-            <button type="button" id="addRegisteredMemberButton">Add member</button>
+            <input type="tel" id="registeredMemberIdentifier" placeholder="Registered mobile number" inputmode="numeric" />
+            <button type="button" id="addRegisteredMemberButton">Add investor</button>
           </div>
           <p class="helper-text" id="registeredMemberHelper"></p>
         </div>
 
         <div class="assignment-panel create-assignment-panel">
           <div class="assignment-head">
-            <strong data-i18n="projectsPage.createInvestorsTitle">Project Investors</strong>
-            <span data-i18n="projectsPage.createInvestorsDescription">Select existing investors or add as many new ones as you need</span>
+            <strong>New Project Investors</strong>
+            <span>For each new investor, enter their name, mobile number, and investment amount.</span>
           </div>
 
           <div class="choice-grid" id="newProjectInvestorOptions"></div>
@@ -88,7 +97,7 @@
         <div class="assignment-panel create-assignment-panel">
           <div class="assignment-head">
             <strong data-i18n="projectsPage.createSupervisorsTitle">Project Supervisors</strong>
-            <span data-i18n="projectsPage.createSupervisorsDescription">Supervisors will also log spend and entries just like investors</span>
+            <span>Supervisors can log project entries when needed.</span>
           </div>
 
           <div class="choice-grid" id="newProjectSupervisorOptions"></div>
@@ -100,33 +109,17 @@
           </button>
         </div>
 
-        <p class="helper-text helper-text-strong" id="addProjectHelper" data-i18n="projectsPage.createHelper">
-          Choose existing members or add new ones while creating the project so its page is ready immediately.
+        <p class="helper-text helper-text-strong" id="addProjectHelper">
+          Add existing investors by mobile number, or enter new investor details below.
         </p>
-      </div>
-
-      <div class="stat-grid stat-grid-compact" data-i18n-aria-label="common.projectOverview" aria-label="Project overview">
-        <article class="stat-card">
-          <span class="stat-label" data-i18n="common.projects">Projects</span>
-          <strong id="projectCount">0</strong>
-          <small data-i18n="projectsPage.statProjectCaption">Currently tracked</small>
-        </article>
-
-        <article class="stat-card">
-          <span class="stat-label" data-i18n="common.expenseEntries">Expense Entries</span>
-          <strong id="entryCount">0</strong>
-          <small data-i18n="projectsPage.statEntryCaption">Across all projects</small>
-        </article>
-
-        <article class="stat-card stat-card-highlight">
-          <span class="stat-label" data-i18n="common.projectSpend">Project Spend</span>
-          <strong id="projectSpend">₹0.00</strong>
-          <small data-i18n="projectsPage.statSpendCaption">All recorded expenses</small>
-        </article>
+        <div class="project-create-action">
+          <button type="button" id="addProjectButton" data-i18n="common.addProject" disabled>Create Project</button>
+          <small>Add at least one investor or supervisor before creating the project.</small>
+        </div>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel project-section-view" id="projectListSection" hidden>
       <div class="panel-head">
         <div>
           <span class="eyebrow eyebrow-soft" data-i18n="common.portfolio">Portfolio</span>
@@ -134,9 +127,8 @@
         </div>
       </div>
 
-      <div class="project-browser">
+      <div class="project-browser project-list-only">
         <div class="project-list" id="projectList"></div>
-        <div class="project-detail" id="projectDetail"></div>
       </div>
     </section>
   </div>
