@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title data-i18n-title="dashboard.title">Steel Arts Dashboard</title>
-  <link rel="stylesheet" href="styles.css?v=20260816mobile1" />
+  <title data-i18n-title="dashboard.title">EarthNest Developers Dashboard</title>
+  <link rel="stylesheet" href="styles.css?v=20260920dashboard-layout" />
 </head>
 <body>
   <div class="app-shell">
@@ -12,41 +12,37 @@
 
       <div class="header-row">
 
-          <nav class="nav-pills"
-              data-i18n-aria-label="common.navPrimary"
-              aria-label="Primary">
+          <div class="dashboard-brand">
+            <img class="dashboard-brand-logo" src="assets/earthnest-developers-logo.png" alt="EarthNest Developers logo" />
+            <h1 class="dashboard-title">Welcome to EarthNest Developers</h1>
+          </div>
 
+          <nav class="nav-pills" data-i18n-aria-label="common.navPrimary" aria-label="Primary">
               <a class="nav-pill is-active" href="index.html">Dashboard</a>
               <a class="nav-pill" href="projects.html">Projects</a>
-
           </nav>
-
-          <h1 class="dashboard-title">
-              Expense Dashboard
-          </h1>
 
           <a class="notification-icon" id="dashboardApprovalNotifications" href="projects.html?section=list" aria-label="Pending approvals" title="Pending approvals">
               <span aria-hidden="true">🔔</span>
               <span class="notification-count" id="dashboardApprovalCount" hidden>0</span>
           </a>
 
+          <label class="language-switcher">
+              <span>Language</span>
+              <select data-language-switcher>
+                  <option value="en">English</option>
+                  <option value="hi">Hindi</option>
+                  <option value="kn">Kannada</option>
+                  <option value="ta">Tamil</option>
+                  <option value="te">Telugu</option>
+              </select>
+          </label>
+
           <button id="logoutBtn">
               Logout
           </button>
 
       </div>
-
-      <label class="language-switcher">
-          <span>Language</span>
-
-          <select data-language-switcher>
-              <option value="en">English</option>
-              <option value="hi">Hindi</option>
-              <option value="kn">Kannada</option>
-              <option value="ta">Tamil</option>
-              <option value="te">Telugu</option>
-          </select>
-      </label>
 
   </header>
 
@@ -76,8 +72,11 @@
       <div class="project-grid" id="projectDirectory"></div>
     </section>
   </div>
+  <div id="dashboardRequestToast" class="request-success-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true">✓</span><span id="dashboardRequestToastText">Your request has been submitted.</span>
+  </div>
   <script src="logout.js"></script>
   <script src="common.js?v=20260530a"></script>
-  <script src="dashboard.js?v=20260530a"></script>
+  <script src="dashboard.js?v=20260920deletion-requests"></script>
 </body>
 </html>

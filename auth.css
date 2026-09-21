@@ -329,7 +329,7 @@ button:active{
 
     position:absolute;
 
-    right:15px;
+    right:8px;
 
     top:50%;
 
@@ -338,6 +338,33 @@ button:active{
     cursor:pointer;
 
     color:#64748b;
+
+    width:auto;
+
+    height:auto;
+
+    padding:6px 8px;
+
+    border:none;
+
+    border-radius:6px;
+
+    background:transparent;
+
+    font-size:13px;
+
+    font-weight:600;
+
+}
+
+.password-toggle:hover,
+.password-toggle:focus-visible{
+
+    background:#e2e8f0;
+
+    color:#1e3a8a;
+
+    transform:translateY(-50%);
 
 }
 

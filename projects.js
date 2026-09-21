@@ -7,9 +7,21 @@ let deletionRequests = [];
 let deletionTargetId = "";
 let deletionCountdownTimer = null;
 let approvalCounts = new Map();
+let projectOutcomeTimer = null;
 const selectedNewProjectInvestors = new Set();
 const selectedNewProjectSupervisors = new Set();
 const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
+
+function showProjectOutcome(message, isError = false) {
+  const toast = document.getElementById("projectOutcomeToast");
+  if (!toast) return;
+  toast.classList.toggle("is-error", isError);
+  toast.querySelector("span:first-child").textContent = isError ? "✕" : "✓";
+  document.getElementById("projectOutcomeToastText").textContent = message;
+  toast.hidden = false;
+  clearTimeout(projectOutcomeTimer);
+  projectOutcomeTimer = window.setTimeout(() => { toast.hidden = true; }, 3500);
+}
 
 function getRequestedProjectId() {
   const params = new URLSearchParams(window.location.search);
@@ -96,10 +108,10 @@ async function loadRemoteProjects() {
   } catch (error) { console.warn("Remote project load skipped.", error); }
 }
 
-async function saveRemoteProject(project, members, initialInvestments = []) {
+async function saveRemoteProject(project, members) {
   const response = await fetch(API_BASE_URL + "/api/projects", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ project, members, investments: initialInvestments })
+    body: JSON.stringify({ project, members })
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Project could not be saved to the database.");
@@ -126,68 +138,35 @@ function getActiveProject() {
   return projects.find(project => String(project.id) === String(activeProjectId));
 }
 
-function createDynamicMemberField(containerId, role, value = "", mobile = "") {
-  const container = document.getElementById(containerId);
-  const field = document.createElement("div");
-  const memberType = role === "supervisor" ? getMemberTypeLabel("Supervisor") : getMemberTypeLabel("Investor");
-  field.className = "dynamic-input-row";
-
-  field.innerHTML = `
-    <input
-      type="text"
-      data-new-${role}-field
-      placeholder="${escapeHtml(t("projectsPage.dynamicFieldPlaceholder", { memberType }))}"
-      value="${escapeHtml(value)}"
-      aria-label="${escapeHtml(t("projectsPage.dynamicFieldAria", { memberType }))}"
-    />
-    <input
-      type="tel"
-      data-new-${role}-mobile
-      placeholder="Mobile number"
-      value="${escapeHtml(mobile)}"
-      aria-label="${escapeHtml(memberType)} mobile number"
-    />
-    ${role === "investor" ? `
-      <input
-        type="number"
-        data-new-investor-amount
-        placeholder="Investment amount"
-        min="0.01"
-        step="0.01"
-        aria-label="Investment amount"
-      />
-    ` : ""}
-    <button type="button" class="button-secondary button-inline-remove" data-remove-row>
-      ${escapeHtml(t("common.remove"))}
-    </button>
-  `;
-
-  container.appendChild(field);
-  field.querySelector("[data-remove-row]").addEventListener("click", () => {
-    field.remove();
-    updateCreateProjectButtonState();
-  });
-  field.querySelectorAll("input").forEach(input => input.addEventListener("input", updateCreateProjectButtonState));
-}
-
 function updateCreateProjectButtonState() {
   const name = document.getElementById("projectName")?.value.trim();
-  const hasNewInvestor = readDynamicMembers("investor").some(member =>
-    member.name && member.mobile && Number.isFinite(member.amount) && member.amount > 0
-  );
-  const hasNewSupervisor = readDynamicMembers("supervisor").some(member => member.name && member.mobile);
   const hasSelectedMember = selectedNewProjectInvestors.size > 0 || selectedNewProjectSupervisors.size > 0;
-  document.getElementById("addProjectButton").disabled = !(name && (hasSelectedMember || hasNewInvestor || hasNewSupervisor));
+  document.getElementById("addProjectButton").disabled = !(name && hasSelectedMember);
 }
 
 function renderCreateProjectMembers() {
   const investorOptions = document.getElementById("newProjectInvestorOptions");
   const supervisorOptions = document.getElementById("newProjectSupervisorOptions");
-  const investorInputs = document.getElementById("newProjectInvestorInputs");
-  const supervisorInputs = document.getElementById("newProjectSupervisorInputs");
+  const selectedMembers = document.getElementById("selectedProjectMembers");
   const helper = document.getElementById("addProjectHelper");
 
-  investorOptions.innerHTML = "";
+  investorOptions.innerHTML = investors.length
+    ? investors.map(investor => `
+        <label class="choice-pill">
+          <input
+            type="checkbox"
+            data-new-project-investor
+            value="${escapeHtml(investor.name)}"
+            ${selectedNewProjectInvestors.has(investor.name) ? "checked" : ""}
+          />
+          <span>${escapeHtml(investor.name)}</span>
+        </label>
+      `).join("")
+    : `
+      <div class="empty-table-state">
+        ${escapeHtml(t("projectsPage.noExistingInvestors"))}
+      </div>
+    `;
 
   supervisorOptions.innerHTML = supervisors.length
     ? supervisors.map(supervisor => `
@@ -207,11 +186,6 @@ function renderCreateProjectMembers() {
       </div>
     `;
 
-  investorInputs.innerHTML = "";
-  supervisorInputs.innerHTML = "";
-  createDynamicMemberField("newProjectInvestorInputs", "investor");
-  createDynamicMemberField("newProjectSupervisorInputs", "supervisor");
-
   supervisorOptions.querySelectorAll("[data-new-project-supervisor]").forEach(input => {
     input.addEventListener("change", () => {
       input.checked ? selectedNewProjectSupervisors.add(input.value) : selectedNewProjectSupervisors.delete(input.value);
@@ -219,7 +193,32 @@ function renderCreateProjectMembers() {
     });
   });
 
-  helper.textContent = "Add registered investors by mobile number, or provide the details for a new investor.";
+  investorOptions.querySelectorAll("[data-new-project-investor]").forEach(input => {
+    input.addEventListener("change", () => {
+      input.checked ? selectedNewProjectInvestors.add(input.value) : selectedNewProjectInvestors.delete(input.value);
+      updateCreateProjectButtonState();
+    });
+  });
+
+  const selected = [
+    ...investors.filter(member => selectedNewProjectInvestors.has(member.name)).map(member => ({ ...member, role: "Investor" })),
+    ...supervisors.filter(member => selectedNewProjectSupervisors.has(member.name)).map(member => ({ ...member, role: "Supervisor" }))
+  ];
+  selectedMembers.innerHTML = selected.map(member => `
+    <span class="selected-project-member" data-member-role="${member.role}" data-member-name="${escapeHtml(member.name)}">
+      <span>${escapeHtml(member.name)} <small>${escapeHtml(member.role)}</small></span>
+      <button type="button" aria-label="Remove ${escapeHtml(member.name)}" title="Remove ${escapeHtml(member.name)}">×</button>
+    </span>
+  `).join("");
+  selectedMembers.querySelectorAll("[data-member-role]").forEach(chip => {
+    chip.querySelector("button").addEventListener("click", () => {
+      const selectedSet = chip.dataset.memberRole === "Investor" ? selectedNewProjectInvestors : selectedNewProjectSupervisors;
+      selectedSet.delete(chip.dataset.memberName);
+      renderCreateProjectMembers();
+    });
+  });
+
+  helper.textContent = "Add registered investors or supervisors by their registered mobile number.";
   updateCreateProjectButtonState();
 }
 
@@ -272,14 +271,18 @@ function renderProjects() {
     const investmentBalance = totalInvested - activeStats.total;
     const deletionRequest = deletionRequests.find(request => String(request.projectId) === String(activeProject.id));
     const currentUser = getCurrentUser();
-    const canApproveDeletion = currentUser?.role === "Investor" && deletionRequest && !deletionRequest.approvedBy.includes(currentUser.mobile);
+    const canApproveDeletion = deletionRequest
+      && currentUser
+      && deletionRequest.requestedByMobile !== currentUser.mobile
+      && !deletionRequest.approvedBy.includes(currentUser.mobile);
     const deletionRequestMarkup = deletionRequest ? `
-      <div class="approval-card">
+      <div class="approval-card request-deletion-card">
         <div>
+          <span class="eyebrow request-type-deletion">Project deletion request</span>
           <h3>Project deletion approval pending</h3>
-          <p>${escapeHtml(deletionRequest.requestedByName)} requested deletion. ${deletionRequest.approvedBy.length} of ${deletionRequest.requiredApprovals} investor approvals received.</p>
+          <p>${escapeHtml(deletionRequest.requestedByName)} requested deletion. ${deletionRequest.approvedBy.length} of ${deletionRequest.requiredApprovals} member approvals received.</p>
         </div>
-        ${canApproveDeletion ? `<button type="button" class="button-danger" data-approve-project-deletion-id="${escapeHtml(activeProject.id)}">Approve deletion</button>` : ""}
+        ${canApproveDeletion ? `<div class="approval-actions"><button type="button" class="button-danger" data-approve-project-deletion-id="${escapeHtml(activeProject.id)}">Approve deletion</button><button type="button" class="button-secondary" data-deny-project-deletion-id="${escapeHtml(activeProject.id)}">Deny deletion</button></div>` : ""}
       </div>
     ` : "";
     const transactionMarkup = relatedTransactions.length
@@ -402,18 +405,9 @@ function renderProjects() {
   document.querySelectorAll("[data-approve-project-deletion-id]").forEach(button => {
     button.addEventListener("click", () => approveProjectDeletion(button.dataset.approveProjectDeletionId));
   });
-}
-
-function readDynamicMembers(role) {
-  return Array.from(document.querySelectorAll(`[data-new-${role}-field]`))
-    .map(nameInput => ({
-      name: nameInput.value.trim(),
-      mobile: nameInput.parentElement.querySelector(`[data-new-${role}-mobile]`).value.trim(),
-      amount: role === "investor"
-        ? Number(nameInput.parentElement.querySelector("[data-new-investor-amount]").value)
-        : null
-    }))
-    .filter(member => member.name || member.mobile);
+  document.querySelectorAll("[data-deny-project-deletion-id]").forEach(button => {
+    button.addEventListener("click", () => denyProjectDeletion(button.dataset.denyProjectDeletionId));
+  });
 }
 
 function getCurrentUser() {
@@ -432,81 +426,30 @@ async function addProject() {
   const selectedSupervisorNames = Array.from(
     document.querySelectorAll("[data-new-project-supervisor]:checked")
   ).map(inputElement => inputElement.value);
-  const typedInvestors = readDynamicMembers("investor");
-  const typedSupervisors = readDynamicMembers("supervisor");
-  const typedInvestorNames = uniqueStrings(typedInvestors.map(member => member.name));
-  const typedSupervisorNames = uniqueStrings(typedSupervisors.map(member => member.name));
-  const existingInvestorNames = new Set(investors.map(investor => normalizeName(investor.name)));
-  const existingSupervisorNames = new Set(
-    supervisors.map(supervisor => normalizeName(supervisor.name))
-  );
-  const newInvestorsToCreate = typedInvestorNames.filter(
-    investorName => !existingInvestorNames.has(normalizeName(investorName))
-  );
-  const newSupervisorsToCreate = typedSupervisorNames.filter(
-    supervisorName => !existingSupervisorNames.has(normalizeName(supervisorName))
-  );
   const assignedInvestorNames = uniqueStrings([
     ...selectedNewProjectInvestors,
-    ...typedInvestorNames,
     ...(currentUser?.role === "Investor" ? [currentUser.name] : [])
   ]);
   const assignedSupervisorNames = uniqueStrings([
     ...selectedSupervisorNames,
-    ...typedSupervisorNames,
     ...(currentUser?.role === "Supervisor" ? [currentUser.name] : [])
   ]);
   const hasExplicitlyAddedMember = selectedNewProjectInvestors.size > 0
-    || selectedNewProjectSupervisors.size > 0
-    || typedInvestors.some(member => member.name && member.mobile && Number.isFinite(member.amount) && member.amount > 0)
-    || typedSupervisors.some(member => member.name && member.mobile);
+    || selectedNewProjectSupervisors.size > 0;
 
   if (!name) {
-    alert(t("projectsPage.alertEnterProjectName"));
+    showProjectOutcome(t("projectsPage.alertEnterProjectName"), true);
     return;
   }
 
   if (projects.some(project => normalizeName(project.name) === normalizeName(name))) {
-    alert(t("projectsPage.alertProjectExists"));
+    showProjectOutcome(t("projectsPage.alertProjectExists"), true);
     return;
   }
 
   if (!hasExplicitlyAddedMember) {
-    alert("Add at least one investor or supervisor before creating this project.");
+    showProjectOutcome("Add at least one investor or supervisor before creating this project.", true);
     return;
-  }
-
-  if (typedInvestors.some(member => !member.name || !member.mobile || !Number.isFinite(member.amount) || member.amount <= 0)) {
-    alert("Enter a name, mobile number, and investment amount for every new investor.");
-    return;
-  }
-  if (typedSupervisors.some(member => !member.name || !member.mobile)) {
-    alert("Enter both name and mobile number for every new supervisor.");
-    return;
-  }
-
-  if (newInvestorsToCreate.length) {
-    investors = [
-      ...investors,
-      ...newInvestorsToCreate.map(investorName => ({
-        id: uid(),
-        name: investorName,
-        mobile: typedInvestors.find(member => member.name === investorName).mobile
-      }))
-    ].sort((left, right) => left.name.localeCompare(right.name));
-    saveInvestors();
-  }
-
-  if (newSupervisorsToCreate.length) {
-    supervisors = [
-      ...supervisors,
-      ...newSupervisorsToCreate.map(supervisorName => ({
-        id: uid(),
-        name: supervisorName,
-        mobile: typedSupervisors.find(member => member.name === supervisorName).mobile
-      }))
-    ].sort((left, right) => left.name.localeCompare(right.name));
-    saveSupervisors();
   }
 
   // The person who creates a project is always part of that project.
@@ -525,24 +468,27 @@ async function addProject() {
     id: uid(),
     name,
     createdAt: new Date().toISOString(),
-    totalInvested: typedInvestors.reduce((sum, member) => sum + Number(member.amount || 0), 0),
+    totalInvested: 0,
     investorNames: assignedInvestorNames,
     supervisorNames: assignedSupervisorNames
   };
-  const memberIndex = new Map([...investors, ...supervisors].map(member => [normalizeName(member.name), member]));
+  const memberIndex = new Map([
+    ...investors,
+    ...supervisors
+  ].map(member => [normalizeName(member.name), member]));
   const projectMembers = [
     ...assignedInvestorNames.map(memberName => ({ name: memberName, mobile: memberIndex.get(normalizeName(memberName))?.mobile, role: "Investor" })),
     ...assignedSupervisorNames.map(memberName => ({ name: memberName, mobile: memberIndex.get(normalizeName(memberName))?.mobile, role: "Supervisor" }))
   ];
   if (projectMembers.some(member => !member.mobile)) {
-    alert("Every project member needs a mobile number. Add the member again with their mobile number.");
+    showProjectOutcome("Every project member needs a mobile number. Add the member again with their mobile number.", true);
     return;
   }
   try {
-    const initialInvestments = typedInvestors.map(member => ({ mobile: member.mobile, amount: member.amount }));
-    await saveRemoteProject(newProject, projectMembers, initialInvestments);
+    await saveRemoteProject(newProject, projectMembers);
   } catch (error) {
-    alert(error.message);
+    showProjectOutcome(error.message || "Project could not be created.", true);
+    alert(error.message || "Project could not be created.");
     return;
   }
   projects.push(newProject);
@@ -555,15 +501,17 @@ async function addProject() {
   activeProjectId = String(projects.find(project => project.name === name)?.id || activeProjectId);
   window.history.replaceState({}, "", `projects.html?id=${encodeURIComponent(activeProjectId)}`);
   renderAll();
+  showProjectOutcome("Project created successfully.");
 }
 
 function deleteProject(projectId) {
   const project = projects.find(item => String(item.id) === String(projectId));
   if (!project) return;
   const existing = deletionRequests.find(request => String(request.projectId) === String(projectId));
-  if (existing) { alert(`Deletion approval is already pending: ${existing.approvedBy.length} of ${existing.requiredApprovals} investor approvals received.`); return; }
+  if (existing) { alert(`Deletion approval is already pending: ${existing.approvedBy.length} of ${existing.requiredApprovals} member approvals received.`); return; }
   deletionTargetId = String(projectId);
-  document.getElementById("deleteProjectModalMessage").textContent = `Request deletion of "${project.name}"? This needs approval from ${Math.max((project.investorNames || []).length - 1, 0)} investor(s).`;
+  const memberCount = (project.investorNames || []).length + (project.supervisorNames || []).length;
+  document.getElementById("deleteProjectModalMessage").textContent = `Request deletion of "${project.name}"? This needs approval from ${Math.max(memberCount - 1, 0)} other project member(s).`;
   document.getElementById("deleteProjectModal").hidden = false;
   const confirmButton = document.getElementById("confirmProjectDeletion");
   const countdown = document.getElementById("deleteProjectCountdown");
@@ -573,7 +521,7 @@ function deleteProject(projectId) {
   clearInterval(deletionCountdownTimer);
   deletionCountdownTimer = setInterval(() => {
     seconds -= 1;
-    countdown.textContent = seconds ? `Confirm available in ${seconds} seconds.` : "You can now request investor approval.";
+    countdown.textContent = seconds ? `Confirm available in ${seconds} seconds.` : "You can now request member approval.";
     if (!seconds) { clearInterval(deletionCountdownTimer); confirmButton.disabled = false; }
   }, 1000);
 }
@@ -589,7 +537,7 @@ async function requestProjectDeletion() {
   if (result.deleted) await hydrateWorkspaceFromDatabase(API_BASE_URL);
   await loadDeletionRequests();
   renderAll();
-  alert(result.deleted ? "Project deleted: N - 1 investor approvals is zero for this project." : "Deletion request sent to the project investors for approval.");
+  alert(result.deleted ? "Project deleted because no other project members need to approve." : "Deletion request sent to all other project members for approval.");
 }
 async function approveProjectDeletion(projectId) {
   const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/deletion-request/approve`, { method: "POST" });
@@ -599,6 +547,14 @@ async function approveProjectDeletion(projectId) {
   await loadDeletionRequests();
   refreshState(); renderAll();
   alert(result.deleted ? "Project deleted after the required investor approvals." : "Your deletion approval was recorded.");
+}
+async function denyProjectDeletion(projectId) {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/deletion-request/deny`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { alert(result.error || "Deletion request could not be denied."); return; }
+  await loadDeletionRequests();
+  renderAll();
+  alert("Project deletion request denied and removed.");
 }
 
 function renderAll() {
@@ -617,18 +573,31 @@ async function addRegisteredProjectMember() {
   helper.textContent = "Looking up registered user...";
   try {
     const response = await fetch(`${API_BASE_URL}/api/users/lookup?identifier=${encodeURIComponent(identifier)}`);
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      throw new Error("The application server is unavailable. Start it on port 4173, then try again.");
+    }
     const user = await response.json();
     if (!response.ok) throw new Error(user.error || "User lookup failed.");
-    if (user.role !== "Investor") throw new Error("This mobile number is not registered as an investor.");
-    const collection = investors;
+    if (!["Investor", "Supervisor"].includes(user.role)) {
+      throw new Error("This mobile number is not registered as a project member.");
+    }
+    const collection = user.role === "Supervisor" ? supervisors : investors;
     if (!collection.some(member => normalizeName(member.name) === normalizeName(user.name))) {
       const member = { id: user.id, name: user.name, mobile: user.mobile };
-      investors = [...investors, member].sort((a, b) => a.name.localeCompare(b.name));
-      saveInvestors();
+      if (user.role === "Supervisor") {
+        supervisors = [...supervisors, member].sort((a, b) => a.name.localeCompare(b.name));
+        saveSupervisors();
+      } else {
+        investors = [...investors, member].sort((a, b) => a.name.localeCompare(b.name));
+        saveInvestors();
+      }
     }
-    selectedNewProjectInvestors.add(user.name);
+    const selectedMembers = user.role === "Supervisor"
+      ? selectedNewProjectSupervisors
+      : selectedNewProjectInvestors;
+    selectedMembers.add(user.name);
     input.value = "";
-    helper.textContent = `${user.name} was added as an investor.`;
+    helper.textContent = `${user.name} was added as a ${user.role.toLowerCase()}.`;
     renderCreateProjectMembers();
   } catch (error) {
     helper.textContent = error.message;
@@ -660,13 +629,6 @@ projectInput.addEventListener("keydown", event => {
   }
 });
 
-document.getElementById("addInvestorFieldButton").addEventListener("click", () => {
-  createDynamicMemberField("newProjectInvestorInputs", "investor");
-});
-
-document.getElementById("addSupervisorFieldButton").addEventListener("click", () => {
-  createDynamicMemberField("newProjectSupervisorInputs", "supervisor");
-});
 document.getElementById("addRegisteredMemberButton").addEventListener("click", addRegisteredProjectMember);
 document.getElementById("cancelProjectDeletion").addEventListener("click", closeDeleteProjectModal);
 document.getElementById("confirmProjectDeletion").addEventListener("click", requestProjectDeletion);
@@ -676,6 +638,9 @@ document.getElementById("deleteProjectModal").addEventListener("click", event =>
 document.getElementById("registeredMemberIdentifier").addEventListener("keydown", event => {
   if (event.key === "Enter") { event.preventDefault(); addRegisteredProjectMember(); }
 });
+document.getElementById("registeredMemberIdentifier").addEventListener("input", event => {
+  event.target.value = event.target.value.replace(/\D/g, "");
+});
 document.querySelectorAll("[data-project-section]").forEach(button => {
   button.addEventListener("click", () => showProjectSection(button.dataset.projectSection));
 });
@@ -683,13 +648,14 @@ window.addEventListener("app-languagechange", renderAll);
 
 refreshState();
 renderAll();
-if (new URLSearchParams(window.location.search).get("section") === "list") showProjectSection("list");
+const initialProjectSection = new URLSearchParams(window.location.search).get("section") === "create" ? "create" : "list";
+showProjectSection(initialProjectSection);
 hydrateWorkspaceFromDatabase(API_BASE_URL)
   .then(async () => {
     await Promise.all([loadDeletionRequests(), loadApprovalNotifications()]);
     refreshState();
     renderAll();
-    if (new URLSearchParams(window.location.search).get("section") === "list") showProjectSection("list");
+    showProjectSection(initialProjectSection);
   })
   .catch(error => {
     console.warn("Saved workspace restore skipped.", error);

@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title data-i18n-title="projectPage.title">Steel Arts Project</title>
-  <link rel="stylesheet" href="styles.css?v=20260816mobile1" />
+  <title data-i18n-title="projectPage.title">EarthNest Developers Project</title>
+  <link rel="stylesheet" href="styles.css?v=20260920transaction-layout" />
 </head>
 <body>
   <div class="app-shell">
     <header class="hero-banner hero-banner-projects">
       <div class="hero-copy">
-        <span class="eyebrow" data-i18n="common.appName">Steel Arts Ledger</span>
+        <span class="eyebrow" data-i18n="common.appName">Welcome to EarthNest Developers</span>
         <h1 id="projectHeroTitle" data-i18n="projectPage.heroTitle">Project Page</h1>
         <p id="projectHeroSubtitle" data-i18n="projectPage.heroSubtitle">
           This page is reserved for one project only, with its own investors,
@@ -158,15 +158,19 @@
               />
             </label>
 
+            <label class="field field-details">
+              <span>Details</span>
+              <textarea id="transactionDetails" placeholder="Add a detailed description for this daily entry" rows="3"></textarea>
+            </label>
+
             <label class="field field-upload">
-              <span>Photo / Bill</span>
+              <span>Photo / Bill (optional)</span>
               <input
                 type="file"
                 id="transactionBill"
                 accept="image/*"
-                capture="environment"
               />
-              <small id="transactionBillName" class="upload-helper">Take a photo or choose an image</small>
+              <small id="transactionBillName" class="upload-helper">Choose an image from your gallery or take a photo</small>
             </label>
           </div>
 
@@ -206,26 +210,12 @@
             </label>
 
             <label class="field">
-              <span data-i18n="common.newName">New Name</span>
-              <input
-                type="text"
-                id="projectMemberNew"
-                data-i18n-placeholder="projectPage.newMemberPlaceholder"
-                placeholder="Type a new member name"
-              />
-            </label>
-
-            <label class="field">
-              <span>Mobile Number</span>
+              <span>Registered Mobile Number</span>
               <input
                 type="tel"
                 id="projectMemberMobile"
-                placeholder="Enter mobile number for a new member"
+                placeholder="Enter a registered mobile number"
               />
-            </label>
-            <label class="field" id="projectMemberInvestmentField">
-              <span>Investment Amount</span>
-              <input type="number" id="projectMemberInvestment" placeholder="0.00" min="0.01" step="0.01" />
             </label>
           </div>
 
@@ -250,8 +240,8 @@
       </section>
 
       <section class="panel project-section" data-project-section="dashboard" id="investorHistoryPanel">
-        <div class="panel-head"><div><span class="eyebrow eyebrow-soft">Investment records</span><h2 id="investorHistoryTitle">Select an investor to view investments</h2></div></div>
-        <div id="investorHistoryList" class="approval-list"><div class="empty-state">Choose an investor card to see each investment date and amount.</div></div>
+        <div class="panel-head"><div><span class="eyebrow eyebrow-soft">Investment records</span><h2 id="investorHistoryTitle">Investment Ledger</h2></div></div>
+        <div id="investorHistoryList" class="table-wrap"></div>
       </section>
 
       <section class="panel project-section quick-view-panel" data-project-section="transactions">
@@ -301,16 +291,19 @@
                 <th data-i18n="common.role">Role</th>
                 <th data-i18n="common.name">Name</th>
                 <th data-i18n="common.paidTo">Paid To</th>
+                <th>Details</th>
                 <th data-i18n="common.amount">Amount</th>
                 <th data-i18n="common.date">Date</th>
+                <th>Approved by</th>
                 <th>Bill</th>
               </tr>
             </thead>
             <tbody id="projectTransactionBody"></tbody>
             <tfoot>
               <tr>
-                <td colspan="3" data-i18n="common.totalExpenses">Total Expenses</td>
+                <td colspan="4" data-i18n="common.totalExpenses">Total Expenses</td>
                 <td id="projectFilteredTotal">₹0.00</td>
+                <td></td>
                 <td></td>
                 <td></td>
               </tr>
@@ -353,6 +346,6 @@
   </div>
 
   <script src="common.js?v=20260627db3"></script>
-  <script src="project-page.js?v=20260816approval2"></script>
+  <script src="project-page.js?v=20260920pending-ledger-feed"></script>
 </body>
 </html>

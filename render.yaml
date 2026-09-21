@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: steel-arts-ledger
+    name: earthnest-developers
     runtime: node
     plan: free
     buildCommand: npm ci

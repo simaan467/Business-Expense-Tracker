@@ -4,6 +4,18 @@ let projects = [];
 let transactions = [];
 let approvalCounts = new Map();
 const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
+let requestToastTimer = null;
+
+function showDashboardRequestToast(message, isError = false) {
+  const toast = document.getElementById("dashboardRequestToast");
+  if (!toast) return;
+  toast.classList.toggle("is-error", isError);
+  toast.querySelector("span:first-child").textContent = isError ? "✕" : "✓";
+  document.getElementById("dashboardRequestToastText").textContent = message;
+  toast.hidden = false;
+  clearTimeout(requestToastTimer);
+  requestToastTimer = window.setTimeout(() => { toast.hidden = true; }, 3500);
+}
 
 async function loadApprovalNotifications() {
   try {
@@ -120,9 +132,9 @@ async function requestDashboardProjectDeletion(projectId) {
     await loadApprovalNotifications();
     refreshState();
     renderAll();
-    alert(result.deleted ? "Project deleted." : "Deletion request sent to the project investors for approval.");
+    showDashboardRequestToast(result.deleted ? "Project deleted." : "Deletion request sent to this project's pending approvals.");
   } catch (error) {
-    alert(error.message);
+    showDashboardRequestToast(error.message, true);
   }
 }
 

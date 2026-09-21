@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title data-i18n-title="projectsPage.title">Steel Arts Projects</title>
-  <link rel="stylesheet" href="styles.css?v=20260816mobile1" />
+  <title data-i18n-title="projectsPage.title">EarthNest Developers Projects</title>
+  <link rel="stylesheet" href="styles.css?v=20260920notifications" />
 </head>
 <body>
   <div class="app-shell">
     <header class="hero-banner hero-banner-projects">
       <div class="hero-copy">
-        <span class="eyebrow" data-i18n="common.appName">Steel Arts Ledger</span>
+        <span class="eyebrow" data-i18n="common.appName">Welcome to EarthNest Developers</span>
         <h1 id="projectsHeroTitle" data-i18n="projectsPage.heroTitle">Project Hub</h1>
         <p data-i18n="projectsPage.heroDescription">
           Organize every project in one place, then feed those names back into the
@@ -38,17 +38,17 @@
     </header>
 
     <section class="project-section-switcher" aria-label="Projects sections">
-      <button type="button" class="project-section-button is-active" data-project-section="create">
+      <button type="button" class="project-section-button" data-project-section="create">
         <strong>Make a New Project</strong>
         <small>Add a project and its investors.</small>
       </button>
-      <button type="button" class="project-section-button" data-project-section="list">
+      <button type="button" class="project-section-button is-active" data-project-section="list">
         <strong>Project List</strong>
         <small>View and select every project.</small>
       </button>
     </section>
 
-    <section class="project-section-view" id="createProjectSection">
+    <section class="project-section-view" id="createProjectSection" hidden>
       <div class="panel panel-accent">
         <div class="panel-head">
           <div>
@@ -69,48 +69,37 @@
         </div>
         <div class="assignment-panel create-assignment-panel">
           <div class="assignment-head">
-            <strong>Add existing investor</strong>
-            <span>Enter the investor's registered mobile number to add them to this project.</span>
+            <strong>Add existing member</strong>
+            <span>Enter an investor's or supervisor's registered mobile number to add them to this project.</span>
           </div>
           <div class="inline-form">
             <input type="tel" id="registeredMemberIdentifier" placeholder="Registered mobile number" inputmode="numeric" />
-            <button type="button" id="addRegisteredMemberButton">Add investor</button>
+            <button type="button" id="addRegisteredMemberButton">Add member</button>
           </div>
           <p class="helper-text" id="registeredMemberHelper"></p>
+          <div class="selected-project-members" id="selectedProjectMembers" aria-live="polite"></div>
         </div>
 
         <div class="assignment-panel create-assignment-panel">
           <div class="assignment-head">
-            <strong>New Project Investors</strong>
-            <span>For each new investor, enter their name, mobile number, and investment amount.</span>
+            <strong>Existing Investors</strong>
+            <span>Click one or more registered investors to include them in this project.</span>
           </div>
 
           <div class="choice-grid" id="newProjectInvestorOptions"></div>
-
-          <div class="dynamic-input-stack" id="newProjectInvestorInputs"></div>
-
-          <button type="button" class="button-secondary" id="addInvestorFieldButton" data-i18n="common.addNewInvestor">
-            + Add New Investor
-          </button>
         </div>
 
         <div class="assignment-panel create-assignment-panel">
           <div class="assignment-head">
-            <strong data-i18n="projectsPage.createSupervisorsTitle">Project Supervisors</strong>
-            <span>Supervisors can log project entries when needed.</span>
+            <strong>Existing Supervisors</strong>
+            <span>Click one or more registered supervisors to include them in this project.</span>
           </div>
 
           <div class="choice-grid" id="newProjectSupervisorOptions"></div>
-
-          <div class="dynamic-input-stack" id="newProjectSupervisorInputs"></div>
-
-          <button type="button" class="button-secondary" id="addSupervisorFieldButton" data-i18n="common.addNewSupervisor">
-            + Add New Supervisor
-          </button>
         </div>
 
         <p class="helper-text helper-text-strong" id="addProjectHelper">
-          Add existing investors by mobile number, or enter new investor details below.
+          Add registered members by mobile number or select them from the lists below.
         </p>
         <div class="project-create-action">
           <button type="button" id="addProjectButton" data-i18n="common.addProject" disabled>Create Project</button>
@@ -119,7 +108,7 @@
       </div>
     </section>
 
-    <section class="panel project-section-view" id="projectListSection" hidden>
+    <section class="panel project-section-view" id="projectListSection">
       <div class="panel-head">
         <div>
           <span class="eyebrow eyebrow-soft" data-i18n="common.portfolio">Portfolio</span>
@@ -146,8 +135,11 @@
       </div>
     </div>
   </div>
+  <div id="projectOutcomeToast" class="request-success-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true">✓</span><span id="projectOutcomeToastText">Project created successfully.</span>
+  </div>
 
   <script src="common.js?v=20260530a"></script>
-  <script src="projects.js?v=20260816a"></script>
+  <script src="projects.js?v=20260920-api-fix"></script>
 </body>
 </html>

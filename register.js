@@ -1,5 +1,16 @@
 const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
 
+document.querySelectorAll("[data-password-toggle]").forEach(button => {
+    button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.passwordToggle);
+        const isVisible = input.type === "text";
+        input.type = isVisible ? "password" : "text";
+        button.textContent = isVisible ? "Show" : "Hide";
+        button.setAttribute("aria-label", isVisible ? "Show password" : "Hide password");
+        button.setAttribute("aria-pressed", String(!isVisible));
+    });
+});
+
 document.getElementById("registerForm").addEventListener("submit", async (e) => {
 
     e.preventDefault();
@@ -40,7 +51,3 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
     }
 
 });
-if (response.ok) {
-    alert(result.message);
-    window.location.href = "login.html";
-}

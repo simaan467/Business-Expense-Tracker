@@ -1,5 +1,16 @@
 const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
 
+document.querySelectorAll("[data-password-toggle]").forEach(button => {
+    button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.passwordToggle);
+        const isVisible = input.type === "text";
+        input.type = isVisible ? "password" : "text";
+        button.textContent = isVisible ? "Show" : "Hide";
+        button.setAttribute("aria-label", isVisible ? "Show password" : "Hide password");
+        button.setAttribute("aria-pressed", String(!isVisible));
+    });
+});
+
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
 
     e.preventDefault();
@@ -19,6 +30,9 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
             body: JSON.stringify(body)
         });
 
+        if (!response.headers.get("content-type")?.includes("application/json")) {
+            throw new Error("The application server returned an invalid response.");
+        }
         const result = await response.json();
 
         if (response.ok) {

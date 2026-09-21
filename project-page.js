@@ -6,6 +6,7 @@ let project = null;
 let pendingTransactions = [];
 let investments = [];
 let pendingInvestments = [];
+let pendingDeletionRequests = { projectDeletion: null, transactionDeletions: [] };
 let selectedInvestorForHistory = "";
 let investmentRequestInvestor = null;
 let requestSuccessTimer = null;
@@ -29,9 +30,11 @@ function showProjectSection(section) {
   });
 }
 
-function showRequestSubmitted(message = "Your request has been submitted.") {
+function showRequestSubmitted(message = "Your request has been submitted.", isError = false) {
   const toast = document.getElementById("requestSuccessToast");
   if (!toast) return;
+  toast.classList.toggle("is-error", isError);
+  toast.querySelector("span:first-child").textContent = isError ? "✕" : "✓";
   document.getElementById("requestSuccessToastText").textContent = message;
   toast.hidden = false;
   clearTimeout(requestSuccessTimer);
@@ -227,16 +230,19 @@ async function loadInvestments() {
     ]);
     if (!confirmed.ok || !pending.ok) throw new Error("Unable to load investment records.");
     investments = await confirmed.json(); pendingInvestments = await pending.json();
-    renderAll(); renderPendingApprovals();
+    // Investment polling should not rebuild every form, filter, and ledger.
+    // Refresh only the views whose values can change here.
+    renderOverview();
+    renderInvestorHistory();
+    renderPendingApprovals();
   } catch (error) { console.warn("Investment records unavailable.", error); }
 }
 
 function renderInvestorHistory() {
   const title = document.getElementById("investorHistoryTitle"), list = document.getElementById("investorHistoryList");
-  if (!selectedInvestorForHistory) return;
-  const entries = investments.filter(item => item.investorName === selectedInvestorForHistory);
-  title.textContent = `${selectedInvestorForHistory}'s investments`;
-  list.innerHTML = entries.length ? entries.map(item => `<article class="approval-card"><div><h3>${formatCurrency(item.amount)}</h3><p class="helper-text">Invested on ${escapeHtml(formatTransactionDate({ createdAt: item.createdAt }))}</p></div></article>`).join("") : '<div class="empty-state">No approved investments yet.</div>';
+  title.textContent = "Investment Ledger";
+  if (!investments.length) { list.innerHTML = '<div class="empty-state">No approved investments yet.</div>'; return; }
+  list.innerHTML = `<table class="transaction-table"><thead><tr><th>Investor</th><th>Amount</th><th>Investment date</th><th>Approved by</th></tr></thead><tbody>${investments.map(item => `<tr><td>${escapeHtml(item.investorName)}</td><td>${formatCurrency(item.amount)}</td><td>${escapeHtml(formatTransactionDate({ createdAt: item.createdAt }))}</td><td>${renderApprovalHistory(item.approvalHistory)}</td></tr>`).join("")}</tbody></table>`;
 }
 
 function renderTransactionForm() {
@@ -330,7 +336,6 @@ function renderProjectMemberManager() {
   helper.textContent = unassignedNames.length
     ? t("projectPage.memberManagerHelperChoose", { memberType: memberTypeLabel })
     : t("projectPage.memberManagerHelperNone", { memberType: memberTypeLabel });
-  document.getElementById("projectMemberInvestmentField").hidden = resolvedRole !== "Investor";
 }
 
 function renderFilters() {
@@ -431,9 +436,53 @@ async function requestLedgerDeletion(id) {
   if (!confirm("Send this transaction deletion for investor approval?")) return;
   const response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}/deletion-request`, { method: "POST" });
   const result = await response.json();
-  if (!response.ok) { alert(result.error || "Deletion request could not be sent."); return; }
+  if (!response.ok) { showRequestSubmitted(result.error || "Deletion request could not be sent.", true); return; }
   if (result.deleted) { await loadRemoteTransactions(); refreshState(); renderAll(); }
-  alert(result.deleted ? "Transaction deleted." : "Deletion request sent for investor approval.");
+  if (result.request) {
+    pendingDeletionRequests.transactionDeletions = [
+      ...pendingDeletionRequests.transactionDeletions.filter(item => String(item.transactionId) !== String(result.request.transactionId)),
+      result.request
+    ];
+    renderPendingApprovals();
+  }
+  // Keep the card in sync with approvals from other users, but do not make
+  // the submitted confirmation depend on this follow-up request succeeding.
+  loadPendingDeletionRequests().catch(error => console.warn(error.message));
+  showRequestSubmitted(result.deleted ? "Transaction deleted." : "Deletion request sent to this project's pending approvals.");
+}
+
+async function approveLedgerDeletion(id) {
+  const response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}/deletion-request/approve`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { showRequestSubmitted(result.error || "Deletion approval could not be recorded.", true); return; }
+  await Promise.all([loadPendingDeletionRequests(), loadRemoteTransactions()]);
+  refreshState(); renderAll();
+  showRequestSubmitted(result.deleted ? "Entry deleted after approval." : "Your deletion approval was recorded.");
+}
+
+async function denyLedgerDeletion(id) {
+  const response = await fetch(`${API_BASE_URL}/api/transactions/${encodeURIComponent(id)}/deletion-request/deny`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { showRequestSubmitted(result.error || "Ledger deletion request could not be denied.", true); return; }
+  await loadPendingDeletionRequests();
+  showRequestSubmitted("Ledger deletion request denied and removed.");
+}
+
+async function approveProjectDeletion(id) {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/deletion-request/approve`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { showRequestSubmitted(result.error || "Project deletion approval could not be recorded.", true); return; }
+  if (result.deleted) { showRequestSubmitted("Project deleted after approval."); window.setTimeout(() => { window.location.href = "index.html"; }, 900); return; }
+  await loadPendingDeletionRequests();
+  showRequestSubmitted("Your project deletion approval was recorded.");
+}
+
+async function denyProjectDeletion(id) {
+  const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(id)}/deletion-request/deny`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { showRequestSubmitted(result.error || "Project deletion request could not be denied.", true); return; }
+  await loadPendingDeletionRequests();
+  showRequestSubmitted("Project deletion request denied and removed.");
 }
 
 function openBillPreview(transactionId) {
@@ -464,7 +513,9 @@ function updateBillFileName() {
   const file = getSelectedBillFile();
 
   if (helper) {
-    helper.textContent = file ? file.name : "Take a photo or choose an image";
+    helper.textContent = file
+      ? file.name
+      : "Optional — choose an image from your gallery or take a photo";
   }
 }
 
@@ -535,16 +586,6 @@ async function saveRemoteTransaction(transaction) {
   }
 }
 
-async function saveProjectMember(name, mobile, role) {
-  const response = await fetch(API_BASE_URL + "/api/project-members", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, mobile, role })
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "Member could not be saved to the database.");
-}
-
 async function assignProjectMember(projectId, member) {
   const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/members`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(member)
@@ -562,6 +603,20 @@ function getCurrentUserName() {
   }
 }
 
+// Deletion approvals are keyed by a member's mobile number, whereas expense
+// approvals use their name. Keep the full signed-in member available for the
+// former without changing the existing name-based transaction flow.
+function getCurrentUser() {
+  try {
+    const user = JSON.parse(sessionStorage.getItem("currentUser") || "null");
+    return user?.name && user?.mobile && ["Investor", "Supervisor"].includes(user.role)
+      ? user
+      : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 async function loadPendingTransactions() {
   if (!project) return;
   try {
@@ -575,6 +630,28 @@ async function loadPendingTransactions() {
   }
 }
 
+async function loadPendingDeletionRequests() {
+  if (!project) return;
+  // Project deletion requests existed before the combined deletion endpoint.
+  // Read the established feed too, so already-pending requests are never
+  // hidden from the project approval screen.
+  const [projectResponse, transactionResponse, combinedResponse] = await Promise.all([
+    fetch(`${API_BASE_URL}/api/project-deletion-requests`, { cache: "no-store" }),
+    fetch(`${API_BASE_URL}/api/pending-transaction-deletions?project=${encodeURIComponent(project.name)}`, { cache: "no-store" }),
+    fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/pending-deletion-requests`, { cache: "no-store" })
+  ]);
+  if (!projectResponse.ok) throw new Error("Unable to load project deletion approvals.");
+  const projectRequests = await projectResponse.json();
+  const matchingProjectRequest = projectRequests.find(request => String(request.projectId) === String(project.id)) || null;
+  const combined = combinedResponse.ok ? await combinedResponse.json() : { transactionDeletions: [] };
+  const transactionDeletions = transactionResponse.ok ? await transactionResponse.json() : combined.transactionDeletions;
+  pendingDeletionRequests = {
+    projectDeletion: matchingProjectRequest || combined.projectDeletion || null,
+    transactionDeletions: Array.isArray(transactionDeletions) ? transactionDeletions : []
+  };
+  renderPendingApprovals();
+}
+
 function renderPendingApprovals() {
   const list = document.getElementById("pendingApprovalList");
   const status = document.getElementById("approvalStatus");
@@ -584,13 +661,15 @@ function renderPendingApprovals() {
     tx.eligibleApprovers.some(name => name.toLocaleLowerCase() === currentUser.toLocaleLowerCase()) &&
     !tx.approvedBy.some(name => name.toLocaleLowerCase() === currentUser.toLocaleLowerCase())
   );
-  status.innerHTML = pendingTransactions.length
-    ? `${pendingTransactions.length} pending <span class="notification-badge">${approvable.length} for you</span>`
+  const deletionMarkup = renderDeletionRequests(currentUser);
+  const deletionCount = (pendingDeletionRequests.projectDeletion ? 1 : 0) + pendingDeletionRequests.transactionDeletions.length;
+  status.innerHTML = pendingTransactions.length || deletionCount
+    ? `${pendingTransactions.length + deletionCount} pending <span class="notification-badge">${approvable.length} transaction approvals for you</span>`
     : "No pending transaction approvals.";
-  if (!pendingTransactions.length) {
+  if (!pendingTransactions.length && !deletionMarkup) {
     list.innerHTML = '<div class="empty-state">All submitted expenses have been approved.</div>';
   } else {
-    list.innerHTML = pendingTransactions.map(tx => {
+    list.innerHTML = deletionMarkup + pendingTransactions.map(tx => {
     const canApprove = approvable.some(item => item.id === tx.id);
     const remaining = Math.max(0, tx.requiredApprovals - tx.approvedBy.length);
     const billMarkup = tx.billImage?.dataUrl
@@ -600,9 +679,9 @@ function renderPendingApprovals() {
         </button>`
       : '<span class="approval-no-bill">No bill photo attached</span>';
     return `<article class="approval-card">
-      <div class="approval-details">
+      <div class="approval-details request-transaction-card">
         <div class="approval-heading">
-          <div><span class="eyebrow eyebrow-soft">Expense awaiting approval</span><h3>${escapeHtml(tx.receiver)}</h3></div>
+          <div><span class="eyebrow request-type-transaction">Transaction request</span><h3>${escapeHtml(tx.receiver)}</h3></div>
           <strong class="approval-amount">${formatCurrency(tx.amount)}</strong>
         </div>
         <dl class="approval-meta">
@@ -614,7 +693,7 @@ function renderPendingApprovals() {
         <div class="approval-bill-row">${billMarkup}</div>
       </div>
       <div class="approval-actions">
-        ${canApprove ? `<button type="button" class="approve-transaction" data-approval-id="${escapeHtml(tx.id)}">Review & approve</button>` : '<span class="chip muted-chip">Pending</span>'}
+        ${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-transaction approval-icon-button approval-icon-approve" data-approval-id="${escapeHtml(tx.id)}" aria-label="Approve transaction" title="Approve">✓</button><button type="button" class="deny-transaction approval-icon-button approval-icon-deny" data-denial-id="${escapeHtml(tx.id)}" aria-label="Deny transaction" title="Deny">✕</button></div>` : '<span class="chip muted-chip">Pending</span>'}
         ${tx.proposerName === currentUser ? `<button type="button" class="edit-pending-transaction button-secondary" data-edit-pending-id="${escapeHtml(tx.id)}">Edit</button><button type="button" class="delete-pending-transaction button-secondary" data-delete-pending-id="${escapeHtml(tx.id)}">Delete request</button>` : ""}
       </div>
     </article>`;
@@ -624,9 +703,23 @@ function renderPendingApprovals() {
   if (investmentList) {
     investmentList.innerHTML = pendingInvestments.length ? pendingInvestments.map(item => {
       const canApprove = item.eligibleApprovers.some(name => name.toLowerCase() === currentUser.toLowerCase()) && !item.approvedBy.some(name => name.toLowerCase() === currentUser.toLowerCase());
-      return `<article class="approval-card"><div class="approval-details"><div class="approval-heading"><div><span class="eyebrow eyebrow-soft">Investment awaiting approval</span><h3>${escapeHtml(item.investorName)}${item.isNewInvestor ? " · New investor" : " · Additional investment"}</h3></div><strong class="approval-amount">${formatCurrency(item.amount)}</strong></div><p class="helper-text">Submitted by ${escapeHtml(item.proposerName)} · ${item.approvedBy.length} of ${item.requiredApprovals} approvals</p></div><div class="approval-actions">${canApprove ? `<button type="button" class="approve-investment" data-investment-approval-id="${escapeHtml(item.id)}">Review & approve</button>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
+      return `<article class="approval-card"><div class="approval-details request-investment-card"><div class="approval-heading"><div><span class="eyebrow request-type-investment">Investment request</span><h3>${escapeHtml(item.investorName)}${item.isNewInvestor ? " · New investor" : " · Additional investment"}</h3></div><strong class="approval-amount">${formatCurrency(item.amount)}</strong></div><p class="helper-text">Submitted by ${escapeHtml(item.proposerName)} · ${item.approvedBy.length} of ${item.requiredApprovals} approvals</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-investment approval-icon-button approval-icon-approve" data-investment-approval-id="${escapeHtml(item.id)}" aria-label="Approve investment" title="Approve">✓</button><button type="button" class="deny-investment approval-icon-button approval-icon-deny" data-investment-denial-id="${escapeHtml(item.id)}" aria-label="Deny investment" title="Deny">✕</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
     }).join("") : "";
   }
+}
+
+function renderDeletionRequests(currentUserName) {
+  const user = getCurrentUser();
+  const projectDeletion = pendingDeletionRequests.projectDeletion;
+  const projectMarkup = projectDeletion ? (() => {
+    const canApprove = user && projectDeletion.requestedByMobile !== user.mobile && !projectDeletion.approvedBy.includes(user.mobile);
+    return `<article class="approval-card request-deletion-card"><div class="approval-details"><span class="eyebrow request-type-deletion">Deletion request</span><h3>Delete this project</h3><p class="helper-text">Requested by ${escapeHtml(projectDeletion.requestedByName)} · ${projectDeletion.approvedBy.length} of ${projectDeletion.requiredApprovals} member approvals received.</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-project-deletion button-danger" data-approve-project-deletion-id="${escapeHtml(project.id)}">Approve deletion</button><button type="button" class="deny-project-deletion button-secondary" data-deny-project-deletion-id="${escapeHtml(project.id)}">Deny deletion</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
+  })() : "";
+  const transactionMarkup = pendingDeletionRequests.transactionDeletions.map(request => {
+    const canApprove = request.eligibleApprovers.some(name => name.toLowerCase() === currentUserName.toLowerCase()) && !request.approvedBy.some(name => name.toLowerCase() === currentUserName.toLowerCase());
+    return `<article class="approval-card request-deletion-card"><div class="approval-details"><div class="approval-heading"><div><span class="eyebrow request-type-deletion">Deletion request</span><h3>${escapeHtml(request.receiver)}</h3></div><strong class="approval-amount">${formatCurrency(request.amount)}</strong></div><p class="helper-text">Ledger entry requested for deletion by ${escapeHtml(request.requestedByName)} · ${request.approvedBy.length} of ${request.requiredApprovals} investor approvals received.</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-ledger-deletion button-danger" data-approve-ledger-deletion-id="${escapeHtml(request.transactionId)}">Approve deletion</button><button type="button" class="deny-ledger-deletion button-secondary" data-deny-ledger-deletion-id="${escapeHtml(request.transactionId)}">Deny deletion</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
+  }).join("");
+  return projectMarkup + transactionMarkup;
 }
 
 async function approvePendingInvestment(id) {
@@ -656,7 +749,7 @@ function closeAddInvestmentModal() {
 async function submitInvestmentRequest() {
   const amount = Number(document.getElementById("addInvestmentAmount").value);
   const helper = document.getElementById("addInvestmentHelper");
-  if (!investmentRequestInvestor || !Number.isFinite(amount) || amount <= 0) { helper.textContent = "Enter a positive investment amount."; return; }
+  if (!investmentRequestInvestor || !Number.isFinite(amount) || amount <= 0) { helper.textContent = "Enter a positive investment amount."; showRequestSubmitted(helper.textContent, true); return; }
   helper.textContent = "Sending investment request...";
   try {
     const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/investment-requests`, {
@@ -667,8 +760,15 @@ async function submitInvestmentRequest() {
     if (!response.ok) throw new Error(result.error || "Investment request could not be submitted.");
     closeAddInvestmentModal();
     await loadInvestments();
-    alert(result.request.status === "approved" ? "Investment recorded." : "Investment request sent for approval.");
-  } catch (error) { helper.textContent = error.message; }
+    showRequestSubmitted(
+      result.request.status === "approved"
+        ? "Investment added successfully."
+        : "Investment request submitted successfully for approval."
+    );
+  } catch (error) {
+    helper.textContent = error.message;
+    showRequestSubmitted(error.message || "Investment request could not be sent.", true);
+  }
 }
 
 async function approvePendingTransaction(id) {
@@ -683,6 +783,22 @@ async function approvePendingTransaction(id) {
   await Promise.all([loadPendingTransactions(), loadRemoteTransactions()]);
   refreshState(); renderAll();
   if (result.transaction.status === "approved") alert("Approval recorded. The transaction is now in the project ledger.");
+}
+
+async function denyPendingTransaction(id) {
+  const response = await fetch(`${API_BASE_URL}/api/pending-transactions/${encodeURIComponent(id)}/deny`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { alert(result.error || "Transaction could not be denied."); return; }
+  await loadPendingTransactions();
+  showRequestSubmitted("Transaction request denied and removed.");
+}
+
+async function denyPendingInvestment(id) {
+  const response = await fetch(`${API_BASE_URL}/api/pending-investments/${encodeURIComponent(id)}/deny`, { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) { alert(result.error || "Investment request could not be denied."); return; }
+  await loadInvestments();
+  showRequestSubmitted("Investment request denied and removed.");
 }
 
 async function deletePendingTransaction(id) {
@@ -736,7 +852,7 @@ function renderTransactions() {
   if (!filtered.length) {
     tbody.innerHTML = `
       <tr class="table-empty-row">
-        <td colspan="6">
+        <td colspan="7">
           <div class="empty-table-state">
             ${escapeHtml(t("projectPage.noExpensesMatch", { projectName: project.name }))}
           </div>
@@ -749,8 +865,10 @@ function renderTransactions() {
         <td>${escapeHtml(getMemberTypeLabel(getTransactionActorType(tx)))}</td>
         <td>${escapeHtml(getTransactionActorName(tx))}</td>
         <td>${escapeHtml(tx.receiver)}</td>
+        <td>${escapeHtml(tx.details || "—")}</td>
         <td>${formatCurrency(tx.amount)}</td>
         <td>${escapeHtml(formatTransactionDate(tx))}</td>
+        <td>${renderApprovalHistory(tx.approvalHistory)}</td>
         <td>${renderBillLink(tx)}</td>
       </tr>
     `).join("");
@@ -759,23 +877,33 @@ function renderTransactions() {
   filteredTotal.textContent = formatCurrency(sumTransactions(filtered));
 }
 
+function renderApprovalHistory(history) {
+  if (!Array.isArray(history) || !history.length) return '<span class="approval-no-bill">No recorded approvals</span>';
+  return history.map(item => {
+    const name = typeof item === "string" ? item : item?.name;
+    const approvedAt = typeof item === "object" ? item?.approvedAt : null;
+    return `<div class="approval-history-item"><strong>${escapeHtml(name || "Investor")}</strong><small>${escapeHtml(approvedAt ? formatTransactionDate({ createdAt: approvedAt }) : "Date not available")}</small></div>`;
+  }).join("");
+}
+
 async function addTransaction() {
   const memberType = document.getElementById("transactionMemberType").value;
   const memberName = document.getElementById("transactionMember").value;
   const receiver = document.getElementById("transactionPaidTo").value.trim();
+  const details = document.getElementById("transactionDetails").value.trim();
   const amount = Number(document.getElementById("transactionAmount").value);
   const assignedNames = getAssignedMemberNames(memberType);
   const billFile = getSelectedBillFile();
 
-  if (!memberType || !memberName || !receiver || !Number.isFinite(amount) || amount <= 0 || !billFile) {
-    alert(t("projectPage.alertFillTransactionFields"));
+  if (!memberType || !memberName || !receiver || !Number.isFinite(amount) || amount <= 0) {
+    showRequestSubmitted(t("projectPage.alertFillTransactionFields"), true);
     return;
   }
 
   if (!assignedNames.includes(memberName)) {
-    alert(t("projectPage.alertChooseAssignedMember", {
+    showRequestSubmitted(t("projectPage.alertChooseAssignedMember", {
       memberType: getMemberTypeLabel(memberType)
-    }));
+    }), true);
     return;
   }
 
@@ -784,7 +912,7 @@ async function addTransaction() {
   try {
     billImage = await readBillImage(billFile);
   } catch (error) {
-    alert("The selected bill image could not be loaded. Please choose another image.");
+    showRequestSubmitted("The selected bill image could not be loaded. Please choose another image.", true);
     return;
   }
 
@@ -796,6 +924,7 @@ async function addTransaction() {
     investor: memberType === "Investor" ? memberName : "",
     supervisor: memberType === "Supervisor" ? memberName : "",
     receiver,
+    details,
     amount,
     billImage,
     createdAt: new Date().toISOString()
@@ -813,7 +942,7 @@ async function addTransaction() {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Transaction could not be submitted for approval.");
-    showRequestSubmitted("Your transaction request has been submitted.");
+    showRequestSubmitted("Your transaction request has been sent for approval.");
     if (result.transaction.status === "approved") {
       await loadRemoteTransactions();
       alert("Transaction saved to the ledger.");
@@ -825,133 +954,64 @@ async function addTransaction() {
     return;
   }
   document.getElementById("transactionPaidTo").value = "";
+  document.getElementById("transactionDetails").value = "";
   document.getElementById("transactionAmount").value = "";
   document.getElementById("transactionBill").value = "";
   updateBillFileName();
   refreshState();
   renderAll();
   loadPendingTransactions();
+  loadPendingDeletionRequests();
 }
 
 async function addProjectMember() {
   const role = document.getElementById("projectMemberRole").value;
   const existingName = document.getElementById("projectMemberExisting").value;
-  const newNameInput = document.getElementById("projectMemberNew");
-  const typedName = newNameInput.value.trim();
   const mobileInput = document.getElementById("projectMemberMobile");
   const mobile = mobileInput.value.trim();
-  const investmentAmount = Number(document.getElementById("projectMemberInvestment").value);
-  const label = getMemberTypeLabel(role);
+  if (!existingName && !mobile) { alert("Choose an existing member or enter a registered mobile number."); return; }
+  if (existingName && mobile) { alert("Use either an existing member or a registered mobile number, not both."); return; }
 
-  if (!role) {
-    alert(t("projectPage.alertChooseRoleFirst"));
-    return;
-  }
-
-  if (existingName && typedName) {
-    alert(t("projectPage.alertChooseExistingOrNewNotBoth", { memberType: label }));
-    return;
-  }
-
-  if (!existingName && !typedName) {
-    alert(t("projectPage.alertChooseExistingOrNew", { memberType: label }));
-    return;
-  }
-
-  if (typedName && !mobile) {
-    alert("Enter a mobile number for the new member.");
-    return;
-  }
-
-  if (existingName && mobile) {
-    alert("Mobile number is only needed when adding a new member.");
-    return;
-  }
-
-  let memberName = existingName;
-  const collection = getCollectionForMemberType(role);
-  const matchingExisting = typedName
-    ? collection.find(member => normalizeName(member.name) === normalizeName(typedName))
-    : null;
-
-  if (typedName) {
-    memberName = matchingExisting ? matchingExisting.name : typedName;
-  }
-
-  if (role !== "Investor" && getAssignedMemberNames(role).some(name => normalizeName(name) === normalizeName(memberName))) {
-    alert(t("projectPage.alertAlreadyAssigned", { memberType: label }));
-    return;
-  }
-
-  if (typedName && !matchingExisting && role !== "Investor") {
-    try {
-      await saveProjectMember(memberName, mobile, role);
-    } catch (error) {
-      alert(error.message);
-      return;
-    }
-    const nextCollection = [
-      ...collection,
-      {
-        id: uid(),
-        name: memberName,
-        mobile
+  let member;
+  try {
+    if (mobile) {
+      const response = await fetch(`${API_BASE_URL}/api/users/lookup?identifier=${encodeURIComponent(mobile)}`);
+      if (!response.headers.get("content-type")?.includes("application/json")) {
+        throw new Error("The application server is unavailable. Start it on port 4173, then try again.");
       }
-    ].sort((a, b) => a.name.localeCompare(b.name));
-
-    if (role === "Supervisor") {
-      supervisors = nextCollection;
-      writeCollection(STORAGE_KEYS.supervisors, supervisors);
-    } else {
-      investors = nextCollection;
-      writeCollection(STORAGE_KEYS.investors, investors);
-    }
-  }
-
-  if (role === "Investor") {
-    const memberMobile = matchingExisting?.mobile || mobile || collection.find(member => normalizeName(member.name) === normalizeName(memberName))?.mobile;
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(project.id)}/investment-requests`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: memberName, mobile: memberMobile, amount: investmentAmount }) });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Investment request could not be submitted.");
-      newNameInput.value = ""; mobileInput.value = ""; document.getElementById("projectMemberInvestment").value = ""; document.getElementById("projectMemberExisting").value = "";
-      await loadInvestments();
-      alert(result.request.status === "approved" ? "Investment recorded." : "Investment request sent for investor approval.");
-    } catch (error) { alert(error.message); }
-    return;
-  }
+      if (!response.ok) throw new Error(result.error || "No registered user matches this mobile number.");
+      member = result;
+    } else {
+      member = getCollectionForMemberType(role).find(item => item.name === existingName);
+      if (!member) throw new Error("The selected member could not be found.");
+      member = { ...member, role };
+    }
+    if (!['Investor', 'Supervisor'].includes(member.role)) throw new Error("This user is not registered as an investor or supervisor.");
+    if (getAssignedMemberNames(member.role).some(name => normalizeName(name) === normalizeName(member.name))) {
+      throw new Error(`${member.name} is already assigned to this project.`);
+    }
+    await assignProjectMember(project.id, { name: member.name, mobile: member.mobile, role: member.role });
+  } catch (error) { alert(error.message); return; }
 
   const projectIndex = projects.findIndex(item => String(item.id) === String(project.id));
 
   if (projectIndex === -1) {
     return;
   }
-  if (role === "Investor" && (!Number.isFinite(investmentAmount) || investmentAmount <= 0)) {
-    alert("Enter a positive investment amount for this investor.");
-    return;
-  }
-
-  const memberMobile = matchingExisting?.mobile || mobile || collection.find(member => normalizeName(member.name) === normalizeName(memberName))?.mobile;
-  try {
-    await assignProjectMember(project.id, { name: memberName, mobile: memberMobile, role });
-  } catch (error) {
-    alert(error.message);
-    return;
-  }
 
   const updatedProject = {
     ...projects[projectIndex],
-    investorNames: role === "Investor"
-      ? uniqueStrings([...getProjectInvestorNames(projects[projectIndex]), memberName])
+    investorNames: member.role === "Investor"
+      ? uniqueStrings([...getProjectInvestorNames(projects[projectIndex]), member.name])
       : getProjectInvestorNames(projects[projectIndex]),
-    supervisorNames: role === "Supervisor"
-      ? uniqueStrings([...getProjectSupervisorNames(projects[projectIndex]), memberName])
+    supervisorNames: member.role === "Supervisor"
+      ? uniqueStrings([...getProjectSupervisorNames(projects[projectIndex]), member.name])
       : getProjectSupervisorNames(projects[projectIndex])
   };
 
   projects[projectIndex] = updatedProject;
   writeCollection(STORAGE_KEYS.projects, projects);
-  newNameInput.value = "";
   mobileInput.value = "";
   document.getElementById("projectMemberExisting").value = "";
   refreshState();
@@ -996,10 +1056,14 @@ document.getElementById("transactionAmount").addEventListener("keydown", event =
     addTransaction();
   }
 });
-document.getElementById("projectMemberNew").addEventListener("keydown", event => {
+document.getElementById("projectMemberMobile").addEventListener("keydown", event => {
   if (event.key === "Enter") {
+    event.preventDefault();
     addProjectMember();
   }
+});
+document.getElementById("projectMemberMobile").addEventListener("input", event => {
+  event.target.value = event.target.value.replace(/\D/g, "");
 });
 document
   .getElementById("projectTransactionBody")
@@ -1011,6 +1075,14 @@ document
   });
 
 document.getElementById("pendingApprovalList").addEventListener("click", event => {
+  const projectDeletionButton = event.target.closest(".approve-project-deletion");
+  if (projectDeletionButton) { approveProjectDeletion(projectDeletionButton.dataset.approveProjectDeletionId); return; }
+  const denyProjectDeletionButton = event.target.closest(".deny-project-deletion");
+  if (denyProjectDeletionButton) { denyProjectDeletion(denyProjectDeletionButton.dataset.denyProjectDeletionId); return; }
+  const ledgerDeletionButton = event.target.closest(".approve-ledger-deletion");
+  if (ledgerDeletionButton) { approveLedgerDeletion(ledgerDeletionButton.dataset.approveLedgerDeletionId); return; }
+  const denyLedgerDeletionButton = event.target.closest(".deny-ledger-deletion");
+  if (denyLedgerDeletionButton) { denyLedgerDeletion(denyLedgerDeletionButton.dataset.denyLedgerDeletionId); return; }
   const billButton = event.target.closest(".approval-bill-preview");
   if (billButton) {
     const transaction = pendingTransactions.find(tx => String(tx.id) === String(billButton.dataset.pendingBillId));
@@ -1019,6 +1091,8 @@ document.getElementById("pendingApprovalList").addEventListener("click", event =
   }
   const button = event.target.closest(".approve-transaction");
   if (button) approvePendingTransaction(button.dataset.approvalId);
+  const denyButton = event.target.closest(".deny-transaction");
+  if (denyButton) denyPendingTransaction(denyButton.dataset.denialId);
   const deleteButton = event.target.closest(".delete-pending-transaction");
   if (deleteButton) deletePendingTransaction(deleteButton.dataset.deletePendingId);
   const editButton = event.target.closest(".edit-pending-transaction");
@@ -1027,6 +1101,8 @@ document.getElementById("pendingApprovalList").addEventListener("click", event =
 document.getElementById("pendingInvestmentList").addEventListener("click", event => {
   const button = event.target.closest(".approve-investment");
   if (button) approvePendingInvestment(button.dataset.investmentApprovalId);
+  const denyButton = event.target.closest(".deny-investment");
+  if (denyButton) denyPendingInvestment(denyButton.dataset.investmentDenialId);
 });
 document.getElementById("projectInvestorList").addEventListener("click", event => {
   const addButton = event.target.closest("[data-add-investment-for]");
@@ -1064,11 +1140,16 @@ checkDatabaseStatus();
 hydrateWorkspaceFromDatabase(API_BASE_URL)
   .then(() => {
     refreshState();
-    return loadRemoteTransactions();
+    // Show the core project immediately, then fetch independent supporting
+    // data together instead of waiting for each endpoint in sequence.
+    renderAll();
+    return Promise.all([
+      loadPendingTransactions(),
+      loadPendingDeletionRequests(),
+      loadInvestments()
+    ]);
   })
-  .then(loadPendingTransactions)
-  .then(loadInvestments)
-  .then(renderAll)
+  .then(() => { refreshState(); renderAll(); })
   .catch(error => {
     console.warn("Saved workspace restore skipped.", error);
     renderAll();

@@ -45,7 +45,7 @@ const SUPPORTED_LANGUAGES = Object.freeze({
 const TRANSLATIONS = Object.freeze({
   en: {
     common: {
-      appName: "Steel Arts Ledger",
+      appName: "EarthNest Developers",
       navPrimary: "Primary",
       dashboard: "Dashboard",
       projects: "Projects",
@@ -130,7 +130,7 @@ const TRANSLATIONS = Object.freeze({
       languageTelugu: "Telugu"
     },
     dashboard: {
-      title: "Steel Arts Dashboard",
+      title: "EarthNest Developers Dashboard",
       heroTitle: "Expense Dashboard",
       heroDescription:
         "Open one project at a time. Each project now lives on its own page with its own investors, supervisors, filters, entry form, and transaction ledger.",
@@ -159,7 +159,7 @@ const TRANSLATIONS = Object.freeze({
       alertInvestorExists: "That investor already exists."
     },
     projectsPage: {
-      title: "Steel Arts Projects",
+      title: "EarthNest Developers Projects",
       heroTitle: "Project Hub",
       heroDescription:
         "Organize every project in one place, then feed those names back into the dashboard for faster transaction entry.",
@@ -201,7 +201,7 @@ const TRANSLATIONS = Object.freeze({
         `Delete "${projectName}"? This will also remove ${count} expense ${count === 1 ? "entry" : "entries"} worth ${total}.`
     },
     projectPage: {
-      title: "Steel Arts Project",
+      title: "EarthNest Developers Project",
       heroTitle: "Project Page",
       heroSubtitle:
         "This page is reserved for one project only, with its own investors, supervisors, filters, entry form, and transaction ledger.",
@@ -1180,7 +1180,7 @@ function writeCollection(key, value) {
 // Restore the database-backed workspace after a new login (or after the
 // browser cache has been cleared). Pages still keep a local cache for a quick
 // first render, but the database is the durable source of project data.
-async function hydrateWorkspaceFromDatabase(apiBaseUrl = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "") {
+async function hydrateWorkspaceFromDatabase(apiBaseUrl = window.location.port === "4173" ? "" : "http://127.0.0.1:4173") {
   const [projectsResponse, transactionsResponse] = await Promise.all([
     fetch(apiBaseUrl + "/api/projects", { cache: "no-store" }),
     fetch(apiBaseUrl + "/api/transactions", { cache: "no-store" })
