@@ -27,6 +27,10 @@
               <span class="notification-count" id="dashboardApprovalCount" hidden>0</span>
           </a>
 
+          <button type="button" class="profile-icon" id="openProfileButton" aria-label="Edit profile" title="Edit profile">
+              <span aria-hidden="true">👤</span>
+          </button>
+
           <label class="language-switcher">
               <span>Language</span>
               <select data-language-switcher>
@@ -74,6 +78,27 @@
   </div>
   <div id="dashboardRequestToast" class="request-success-toast" role="status" aria-live="polite" hidden>
     <span aria-hidden="true">✓</span><span id="dashboardRequestToastText">Your request has been submitted.</span>
+  </div>
+  <div class="bill-modal" id="profileModal" hidden>
+    <section class="bill-modal-panel profile-modal-panel" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+      <div class="bill-modal-head">
+        <div>
+          <span class="eyebrow eyebrow-soft">Profile</span>
+          <h2 id="profileModalTitle">Edit your name</h2>
+        </div>
+        <button type="button" class="button-secondary bill-modal-close" id="closeProfileButton" aria-label="Close profile editor">Close</button>
+      </div>
+      <form id="profileForm" class="profile-form">
+        <label class="field">
+          <span>Name</span>
+          <input type="text" id="profileName" name="name" maxlength="80" required autocomplete="name" />
+        </label>
+        <p class="helper-text">This updates your account name and project membership records.</p>
+        <div class="action-row">
+          <button type="submit" id="saveProfileButton">Save name</button>
+        </div>
+      </form>
+    </section>
   </div>
   <script src="logout.js"></script>
   <script src="common.js?v=20260530a"></script>

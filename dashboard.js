@@ -17,6 +17,49 @@ function showDashboardRequestToast(message, isError = false) {
   requestToastTimer = window.setTimeout(() => { toast.hidden = true; }, 3500);
 }
 
+function getDashboardCurrentUser() {
+  try { return JSON.parse(sessionStorage.getItem("currentUser") || "null"); }
+  catch { return null; }
+}
+
+function openProfileModal() {
+  const user = getDashboardCurrentUser();
+  if (!user) return;
+  document.getElementById("profileName").value = user.name || "";
+  document.getElementById("profileModal").hidden = false;
+  document.getElementById("profileName").focus();
+}
+
+function closeProfileModal() {
+  document.getElementById("profileModal").hidden = true;
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  const name = document.getElementById("profileName").value.trim();
+  if (!name) { showDashboardRequestToast("Enter your name.", true); return; }
+
+  const saveButton = document.getElementById("saveProfileButton");
+  saveButton.disabled = true;
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/profile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Your profile could not be updated.");
+    sessionStorage.setItem("currentUser", JSON.stringify(result.user));
+    sessionStorage.setItem("authToken", result.token);
+    closeProfileModal();
+    showDashboardRequestToast("Your name has been updated.");
+  } catch (error) {
+    showDashboardRequestToast(error.message, true);
+  } finally {
+    saveButton.disabled = false;
+  }
+}
+
 async function loadApprovalNotifications() {
   try {
     const response = await fetch(`${API_BASE_URL}/api/approval-notifications`, { cache: "no-store" });
@@ -146,6 +189,12 @@ window.addEventListener("app-languagechange", renderAll);
 document.getElementById("projectDirectory").addEventListener("click", event => {
   const button = event.target.closest(".dashboard-delete-project");
   if (button) requestDashboardProjectDeletion(button.dataset.deleteProjectId);
+});
+document.getElementById("openProfileButton").addEventListener("click", openProfileModal);
+document.getElementById("closeProfileButton").addEventListener("click", closeProfileModal);
+document.getElementById("profileForm").addEventListener("submit", saveProfile);
+document.getElementById("profileModal").addEventListener("click", event => {
+  if (event.target === event.currentTarget) closeProfileModal();
 });
 
 refreshState();

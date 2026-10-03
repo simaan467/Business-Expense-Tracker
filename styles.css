@@ -425,6 +425,45 @@ a {
   font-weight: 700;
 }
 
+.field:has(.paid-to-suggestions) {
+  position: relative;
+}
+
+.paid-to-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% - 1px);
+  left: 0;
+  right: 0;
+  max-height: 192px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid #d5dbe3;
+  border-radius: 0 0 10px 10px;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
+}
+
+.paid-to-suggestion {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 7px;
+  background: #fff;
+  color: #1f2937;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.paid-to-suggestion:hover,
+.paid-to-suggestion:focus-visible {
+  background: #edf4f7;
+  color: #114b5f;
+  outline: none;
+}
+
 input,
 select {
   width: 100%;
@@ -608,6 +647,21 @@ button:disabled {
   font-size: 1.65rem;
   box-shadow: 0 6px 16px rgba(10, 52, 66, 0.18);
 }
+.profile-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 1.25rem;
+  box-shadow: 0 6px 16px rgba(10, 52, 66, 0.18);
+}
+.profile-icon:hover, .profile-icon:focus-visible { background: rgba(255, 255, 255, 0.28); transform: translateY(-1px); }
 .notification-count {
   position: absolute;
   top: -9px;
@@ -750,7 +804,7 @@ button:disabled {
 
 .header-row{
     display:grid;
-    grid-template-columns:minmax(0, 1fr) auto auto auto;
+    grid-template-columns:minmax(0, 1fr) repeat(5, auto);
     align-items:center;
     gap:20px;
     width:100%;
@@ -795,6 +849,14 @@ button:disabled {
    visually distinct from the transaction fields. */
 .field-details {
   grid-column: 1 / -1;
+}
+
+.field-custom-date {
+  grid-column: 1 / -1;
+}
+
+.field-custom-date .helper-text {
+  margin: -2px 0 0;
 }
 
 .field-details textarea {
@@ -1203,6 +1265,8 @@ button:disabled {
 .bill-modal-head h2 { min-width: 0; overflow-wrap: anywhere; font-size: 1.2rem; }
 .bill-modal-close { flex: 0 0 auto; min-height: 40px; padding: 9px 13px; }
 #billPreviewImage { width: 100%; max-height: 76vh; object-fit: contain; border-radius: 12px; background: #fff; }
+.profile-modal-panel { width: min(440px, 100%); }
+.profile-form { display: grid; gap: 14px; }
 
 .db-status { flex-basis: 100%; font-weight: 700; }
 .db-status-error { color: var(--danger); }
@@ -1289,6 +1353,18 @@ button:disabled {
 .quick-filter-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .quick-filter-grid .field { gap: 6px; }
 .quick-filter-grid select { min-height: 46px; padding: 10px 12px; }
+
+.ledger-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 14px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255, 255, 255, 0.55); }
+.ledger-export-controls, .ledger-pagination-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.ledger-tools label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .88rem; font-weight: 700; }
+.ledger-tools input, .ledger-tools select { width: auto; min-height: 38px; padding: 7px 9px; }
+.ledger-tools button { min-height: 38px; padding: 7px 12px; }
+#transactionPageStatus { min-width: 86px; text-align: center; color: var(--muted); font-size: .9rem; font-weight: 700; }
+.ledger-pagination-footer { justify-content: flex-end; gap: 6px; margin-top: 12px; }
+.ledger-pagination-footer label { gap: 4px; font-size: .8rem; }
+.ledger-pagination-footer select { min-height: 32px; padding: 4px 7px; }
+.ledger-pagination-footer button { min-height: 32px; padding: 4px 9px; font-size: .82rem; }
+.ledger-pagination-footer #transactionPageStatus { min-width: 72px; font-size: .8rem; }
 
 @media (max-width: 640px) {
   .quick-view-panel { padding: 16px; }

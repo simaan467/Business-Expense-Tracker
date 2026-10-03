@@ -143,7 +143,9 @@
                 id="transactionPaidTo"
                 data-i18n-placeholder="projectPage.paidToPlaceholder"
                 placeholder="Vendor or person name"
+                autocomplete="off"
               />
+              <div id="recentPaidToNames" class="paid-to-suggestions" hidden role="listbox" aria-label="Recent paid-to names"></div>
             </label>
 
             <label class="field">
@@ -161,6 +163,12 @@
             <label class="field field-details">
               <span>Details</span>
               <textarea id="transactionDetails" placeholder="Add a detailed description for this daily entry" rows="3"></textarea>
+            </label>
+
+            <label class="field field-custom-date">
+              <span>Transaction date and time (optional)</span>
+              <input type="datetime-local" id="transactionDateTime" />
+              <small class="helper-text">Leave blank to use the current date and time.</small>
             </label>
 
             <label class="field field-upload">
@@ -284,6 +292,15 @@
           </div>
         </div>
 
+        <div class="ledger-tools" aria-label="Transaction export and pagination controls">
+          <div class="ledger-export-controls">
+            <strong>Export to PDF</strong>
+            <label>From <input type="date" id="exportStartDate" /></label>
+            <label>To <input type="date" id="exportEndDate" /></label>
+            <button type="button" id="exportTransactionsPdf" class="button-secondary">Download PDF</button>
+          </div>
+        </div>
+
         <div class="table-wrap">
           <table class="transaction-table">
             <thead>
@@ -309,6 +326,16 @@
               </tr>
             </tfoot>
           </table>
+        </div>
+        <div class="ledger-pagination-controls ledger-pagination-footer">
+          <label>Rows per page
+            <select id="transactionPageSize">
+              <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+            </select>
+          </label>
+          <button type="button" id="previousTransactionPage" class="button-secondary">Previous</button>
+          <span id="transactionPageStatus" aria-live="polite"></span>
+          <button type="button" id="nextTransactionPage" class="button-secondary">Next</button>
         </div>
       </section>
     </div>
@@ -346,6 +373,7 @@
   </div>
 
   <script src="common.js?v=20260627db3"></script>
-  <script src="project-page.js?v=20260920pending-ledger-feed"></script>
+  <script src="node_modules/jspdf/dist/jspdf.umd.min.js"></script>
+  <script src="project-page.js?v=20261003ledger-export"></script>
 </body>
 </html>

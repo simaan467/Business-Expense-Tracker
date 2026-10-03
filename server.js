@@ -213,7 +213,7 @@ async function ensureSchema() {
 function setCorsHeaders(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 function sendJson(res, status, body) { setCorsHeaders(res); res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); }
 function getAuthenticatedUser(req) {
@@ -290,6 +290,40 @@ async function handleApi(req, res, url) {
   const isPublicAuthRoute = req.method === "POST" && ["/api/auth/register", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password"].includes(url.pathname);
   const currentUser = isPublicAuthRoute ? null : getAuthenticatedUser(req);
   if (!isPublicAuthRoute && !currentUser) { sendJson(res, 401, { error: "Please sign in again." }); return; }
+  if (req.method === "POST" && url.pathname === "/api/profile") {
+    const { name } = JSON.parse(await readBody(req));
+    const updatedName = String(name || "").trim();
+    if (updatedName.length < 2 || updatedName.length > 80) { sendJson(res, 400, { error: "Your name must be between 2 and 80 characters." }); return; }
+
+    const client = await connectWithRetry();
+    try {
+      await client.query("BEGIN");
+      const userResult = await client.query("update users set name=$2 where id=$1 returning id,name,email,mobile,role", [currentUser.id, updatedName]);
+      if (!userResult.rows.length) { await client.query("ROLLBACK"); sendJson(res, 404, { error: "Your account could not be found." }); return; }
+      await client.query("update project_members set name=$2 where mobile=$1", [currentUser.mobile, updatedName]);
+      await client.query("update project_assignments set member_name=$2 where member_mobile=$1", [currentUser.mobile, updatedName]);
+      // Approval records identify people by name. Keep pending requests usable
+      // immediately after a profile rename.
+      const replacePendingName = `
+        update %TABLE% set
+          eligible_approvers = (select coalesce(jsonb_agg(case when lower(item #>> '{}')=lower($1) then to_jsonb($2::text) else item end), '[]'::jsonb) from jsonb_array_elements(eligible_approvers) item),
+          approved_by = (select coalesce(jsonb_agg(case when lower(item #>> '{}')=lower($1) then to_jsonb($2::text) else item end), '[]'::jsonb) from jsonb_array_elements(approved_by) item)
+      `;
+      await client.query(replacePendingName.replace("%TABLE%", "pending_transactions"), [currentUser.name, updatedName]);
+      await client.query(replacePendingName.replace("%TABLE%", "pending_investments"), [currentUser.name, updatedName]);
+      await client.query("update pending_transactions set proposer_name=$2 where proposer_name=$1", [currentUser.name, updatedName]);
+      await client.query("update pending_investments set proposer_name=$2 where proposer_name=$1", [currentUser.name, updatedName]);
+      await client.query("update pending_transaction_deletions set requested_by_name=$2 where requested_by_name=$1", [currentUser.name, updatedName]);
+      await client.query("update pending_project_deletions set requested_by_name=$2 where requested_by_mobile=$1", [currentUser.mobile, updatedName]);
+      await client.query("COMMIT");
+      const user = userResult.rows[0];
+      sendJson(res, 200, {
+        user,
+        token: jwt.sign({ id: user.id, name: user.name, role: user.role, mobile: user.mobile, email: user.email }, jwtSecret, { expiresIn: "8h" })
+      });
+    } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+    return;
+  }
   if (req.method === "GET" && /^\/api\/projects\/[^/]+\/investments$/.test(url.pathname)) {
     const projectId = decodeURIComponent(url.pathname.split("/")[3]);
     const access = await canAccessProject(currentUser, projectId);
@@ -684,6 +718,10 @@ async function handleApi(req, res, url) {
     if (!tx.id || !tx.project || !tx.memberType || !tx.memberName || !tx.receiver || !Number.isFinite(Number(tx.amount)) || Number(tx.amount) <= 0 || !proposerName) {
       sendJson(res, 400, { error: "A complete transaction and proposer are required." }); return;
     }
+    const transactionDate = tx.createdAt ? new Date(tx.createdAt) : new Date();
+    if (Number.isNaN(transactionDate.getTime())) {
+      sendJson(res, 400, { error: "The transaction date and time is invalid." }); return;
+    }
     const eligibleApprovers = investorNames;
     const requiredApprovals = Math.min(Math.ceil(investorNames.length / 2), eligibleApprovers.length);
     const client = await connectWithRetry();
@@ -691,7 +729,7 @@ async function handleApi(req, res, url) {
       await client.query("BEGIN");
       await client.query(
         "insert into pending_transactions (id,project,member_type,member_name,investor,supervisor,receiver,details,amount,bill_name,bill_type,bill_data_url,created_at,proposer_name,eligible_approvers,approved_by,required_approvals,status) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,'[]'::jsonb,$16,$17) on conflict (id) do nothing",
-        [tx.id, tx.project, tx.memberType, tx.memberName, tx.investor || "", tx.supervisor || "", tx.receiver, String(tx.details || "").trim(), tx.amount, tx.billImage?.name || null, tx.billImage?.type || null, tx.billImage?.dataUrl || null, tx.createdAt || new Date().toISOString(), proposerName, JSON.stringify(eligibleApprovers), requiredApprovals, requiredApprovals === 0 ? "approved" : "pending"]
+        [tx.id, tx.project, tx.memberType, tx.memberName, tx.investor || "", tx.supervisor || "", tx.receiver, String(tx.details || "").trim(), tx.amount, tx.billImage?.name || null, tx.billImage?.type || null, tx.billImage?.dataUrl || null, transactionDate.toISOString(), proposerName, JSON.stringify(eligibleApprovers), requiredApprovals, requiredApprovals === 0 ? "approved" : "pending"]
       );
       const result = await client.query("select * from pending_transactions where id=$1 for update", [tx.id]);
       if (result.rows[0]?.status === "approved") await finalizePendingTransaction(client, result.rows[0]);

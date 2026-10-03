@@ -11,6 +11,8 @@ let selectedInvestorForHistory = "";
 let investmentRequestInvestor = null;
 let requestSuccessTimer = null;
 let activeProjectSection = new URLSearchParams(window.location.search).get("section") === "approvals" ? "approvals" : "";
+let transactionPage = 1;
+let transactionPageSize = 10;
 
 function showProjectSection(section) {
   activeProjectSection = section;
@@ -301,6 +303,38 @@ function renderTransactionForm() {
     projectName: project.name
   });
   button.disabled = false;
+}
+
+function getRecentPaidToNames() {
+  // Keep the latest occurrence of each name so suggestions reflect the most
+  // recently used vendors/persons, while preserving the user's original casing.
+  const seenNames = new Set();
+  return getPageTransactions()
+    .slice()
+    .sort((first, second) => new Date(second.createdAt || 0) - new Date(first.createdAt || 0))
+    .map(transaction => String(transaction.receiver || "").trim())
+    .filter(name => {
+      const key = name.toLocaleLowerCase();
+      if (!name || seenNames.has(key)) return false;
+      seenNames.add(key);
+      return true;
+    });
+}
+
+function renderRecentPaidToNames() {
+  const paidToNames = document.getElementById("recentPaidToNames");
+  const paidToInput = document.getElementById("transactionPaidTo");
+  if (!paidToNames || !paidToInput) return;
+
+  const query = paidToInput.value.trim().toLocaleLowerCase();
+  const matchingNames = query
+    ? getRecentPaidToNames().filter(name => name.toLocaleLowerCase().startsWith(query))
+    : [];
+
+  paidToNames.innerHTML = matchingNames
+    .map(name => `<button type="button" class="paid-to-suggestion" role="option" data-paid-to-name="${escapeHtml(name)}">${escapeHtml(name)}</button>`)
+    .join("");
+  paidToNames.hidden = !matchingNames.length;
 }
 
 function renderProjectMemberManager() {
@@ -834,13 +868,11 @@ async function syncRemoteTransactions() {
   }
 }
 
-function renderTransactions() {
-  const tbody = document.getElementById("projectTransactionBody");
-  const filteredTotal = document.getElementById("projectFilteredTotal");
+function getFilteredTransactions() {
   const roleFilter = document.getElementById("filterRole").value;
   const memberFilter = document.getElementById("filterMember").value;
   const paidToFilter = document.getElementById("filterPaidTo").value;
-  const filtered = getPageTransactions().filter(tx => {
+  return getPageTransactions().filter(tx => {
     const actorType = getTransactionActorType(tx);
     const actorName = getTransactionActorName(tx);
     const matchesRole = roleFilter ? actorType === roleFilter : true;
@@ -848,8 +880,21 @@ function renderTransactions() {
     const matchesPaidTo = paidToFilter ? tx.receiver === paidToFilter : true;
     return matchesRole && matchesMember && matchesPaidTo;
   });
+}
 
-  if (!filtered.length) {
+function renderTransactions() {
+  const tbody = document.getElementById("projectTransactionBody");
+  const filteredTotal = document.getElementById("projectFilteredTotal");
+  const filtered = getFilteredTransactions();
+  const totalPages = Math.max(1, Math.ceil(filtered.length / transactionPageSize));
+  transactionPage = Math.min(transactionPage, totalPages);
+  const pageStart = (transactionPage - 1) * transactionPageSize;
+  const pageTransactions = filtered.slice(pageStart, pageStart + transactionPageSize);
+  document.getElementById("transactionPageStatus").textContent = `Page ${transactionPage} of ${totalPages}`;
+  document.getElementById("previousTransactionPage").disabled = transactionPage <= 1;
+  document.getElementById("nextTransactionPage").disabled = transactionPage >= totalPages;
+
+  if (!pageTransactions.length) {
     tbody.innerHTML = `
       <tr class="table-empty-row">
         <td colspan="7">
@@ -860,7 +905,7 @@ function renderTransactions() {
       </tr>
     `;
   } else {
-    tbody.innerHTML = filtered.map(tx => `
+    tbody.innerHTML = pageTransactions.map(tx => `
       <tr>
         <td>${escapeHtml(getMemberTypeLabel(getTransactionActorType(tx)))}</td>
         <td>${escapeHtml(getTransactionActorName(tx))}</td>
@@ -875,6 +920,73 @@ function renderTransactions() {
   }
 
   filteredTotal.textContent = formatCurrency(sumTransactions(filtered));
+}
+
+function getExportTransactions() {
+  const startValue = document.getElementById("exportStartDate").value;
+  const endValue = document.getElementById("exportEndDate").value;
+  const start = startValue ? new Date(`${startValue}T00:00:00`) : null;
+  const end = endValue ? new Date(`${endValue}T00:00:00`) : null;
+  if ((start && Number.isNaN(start.getTime())) || (end && Number.isNaN(end.getTime())) || (start && end && start > end)) throw new Error("Choose a valid date range.");
+  return getFilteredTransactions().filter(tx => {
+    const date = new Date(tx.createdAt || 0);
+    return (!start || date >= start) && (!end || date < new Date(end.getTime() + 86400000));
+  });
+}
+
+function formatPdfCurrency(amount) {
+  return `INR ${Number(amount || 0).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function exportTransactionsToPdf() {
+  try {
+    const records = getExportTransactions();
+    if (!records.length) throw new Error("No transactions match the selected date range and filters.");
+    if (!window.jspdf?.jsPDF) throw new Error("The PDF exporter is unavailable. Please refresh and try again.");
+    const doc = new window.jspdf.jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth(), pageHeight = doc.internal.pageSize.getHeight();
+    const columns = [
+      ["Role", 62, tx => getMemberTypeLabel(getTransactionActorType(tx))], ["Name", 88, tx => getTransactionActorName(tx)],
+      ["Paid To", 90, tx => tx.receiver], ["Details", 150, tx => tx.details || "-"],
+      ["Amount", 100, tx => formatPdfCurrency(tx.amount)], ["Date", 110, tx => formatTransactionDate(tx)],
+      ["Approved By", 115, tx => (tx.approvalHistory || []).map(item => typeof item === "string" ? item : item?.name).filter(Boolean).join(", ") || "-"],
+      ["Bill", 45, tx => tx.billImage ? "Yes" : "No"]
+    ];
+    let y = 42;
+    const drawHeader = () => {
+      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text(`${project.name} Transactions`, 36, y);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      doc.text(`Date range: ${document.getElementById("exportStartDate").value || "All dates"} to ${document.getElementById("exportEndDate").value || "All dates"} | ${records.length} transaction(s)`, 36, y + 16);
+      y += 38; let x = 36; doc.setFillColor(17, 75, 95); doc.rect(36, y, pageWidth - 72, 20, "F"); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold");
+      columns.forEach(([label, width]) => { doc.text(label, x + 4, y + 14); x += width; });
+      doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "normal"); y += 20;
+    };
+    const nextPage = () => { doc.addPage(); y = 42; drawHeader(); };
+    drawHeader();
+    records.forEach(tx => {
+      const cells = columns.map(([, width, value], index) => index === 4
+        ? [String(value(tx))]
+        : doc.splitTextToSize(String(value(tx)), width - 8));
+      const rowHeight = Math.max(24, ...cells.map(cell => cell.length * 11 + 8));
+      if (y + rowHeight > pageHeight - 38) nextPage();
+      let x = 36; doc.setDrawColor(210, 218, 224);
+      columns.forEach(([, width], index) => {
+        doc.rect(x, y, width, rowHeight);
+        if (index === 4) doc.text(cells[index][0], x + width - 4, y + 13, { align: "right" });
+        else doc.text(cells[index], x + 4, y + 13);
+        x += width;
+      });
+      y += rowHeight;
+    });
+    if (y + 24 > pageHeight - 38) nextPage();
+    doc.setFont("helvetica", "bold"); doc.text(`Total expenses: ${formatPdfCurrency(sumTransactions(records))}`, pageWidth - 190, y + 16);
+    const name = project.name.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase() || "project";
+    doc.save(`${name}-transactions.pdf`);
+    showRequestSubmitted("Your transaction PDF has been downloaded.");
+  } catch (error) { showRequestSubmitted(error.message, true); }
 }
 
 function renderApprovalHistory(history) {
@@ -892,11 +1004,18 @@ async function addTransaction() {
   const receiver = document.getElementById("transactionPaidTo").value.trim();
   const details = document.getElementById("transactionDetails").value.trim();
   const amount = Number(document.getElementById("transactionAmount").value);
+  const selectedDateTime = document.getElementById("transactionDateTime").value;
+  const selectedTimestamp = selectedDateTime ? new Date(selectedDateTime) : null;
   const assignedNames = getAssignedMemberNames(memberType);
   const billFile = getSelectedBillFile();
 
   if (!memberType || !memberName || !receiver || !Number.isFinite(amount) || amount <= 0) {
     showRequestSubmitted(t("projectPage.alertFillTransactionFields"), true);
+    return;
+  }
+
+  if (selectedDateTime && Number.isNaN(selectedTimestamp.getTime())) {
+    showRequestSubmitted("Please choose a valid transaction date and time.", true);
     return;
   }
 
@@ -927,7 +1046,7 @@ async function addTransaction() {
     details,
     amount,
     billImage,
-    createdAt: new Date().toISOString()
+    createdAt: selectedTimestamp ? selectedTimestamp.toISOString() : new Date().toISOString()
   };
 
   try {
@@ -956,6 +1075,7 @@ async function addTransaction() {
   document.getElementById("transactionPaidTo").value = "";
   document.getElementById("transactionDetails").value = "";
   document.getElementById("transactionAmount").value = "";
+  document.getElementById("transactionDateTime").value = "";
   document.getElementById("transactionBill").value = "";
   updateBillFileName();
   refreshState();
@@ -1029,6 +1149,7 @@ function renderAll() {
   renderMemberStandings("projectInvestorList", "Investor");
   renderMemberStandings("projectSupervisorList", "Supervisor");
   renderTransactionForm();
+  renderRecentPaidToNames();
   renderProjectMemberManager();
   renderFilters();
   renderTransactions();
@@ -1043,13 +1164,32 @@ document.querySelector(".project-section-nav").addEventListener("click", event =
 });
 document.getElementById("addProjectMemberButton").addEventListener("click", addProjectMember);
 document.getElementById("transactionMemberType").addEventListener("change", renderTransactionForm);
+document.getElementById("transactionPaidTo").addEventListener("input", renderRecentPaidToNames);
+document.getElementById("transactionPaidTo").addEventListener("blur", () => {
+  window.setTimeout(() => { document.getElementById("recentPaidToNames").hidden = true; }, 150);
+});
+document.getElementById("recentPaidToNames").addEventListener("click", event => {
+  const suggestion = event.target.closest("[data-paid-to-name]");
+  if (!suggestion) return;
+  document.getElementById("transactionPaidTo").value = suggestion.dataset.paidToName;
+  document.getElementById("recentPaidToNames").hidden = true;
+});
 document.getElementById("projectMemberRole").addEventListener("change", renderProjectMemberManager);
 document.getElementById("filterRole").addEventListener("change", () => {
+  transactionPage = 1;
   renderFilters();
   renderTransactions();
 });
-document.getElementById("filterMember").addEventListener("change", renderTransactions);
-document.getElementById("filterPaidTo").addEventListener("change", renderTransactions);
+document.getElementById("filterMember").addEventListener("change", () => { transactionPage = 1; renderTransactions(); });
+document.getElementById("filterPaidTo").addEventListener("change", () => { transactionPage = 1; renderTransactions(); });
+document.getElementById("transactionPageSize").addEventListener("change", event => {
+  transactionPageSize = Number(event.target.value) || 10;
+  transactionPage = 1;
+  renderTransactions();
+});
+document.getElementById("previousTransactionPage").addEventListener("click", () => { transactionPage = Math.max(1, transactionPage - 1); renderTransactions(); });
+document.getElementById("nextTransactionPage").addEventListener("click", () => { transactionPage += 1; renderTransactions(); });
+document.getElementById("exportTransactionsPdf").addEventListener("click", exportTransactionsToPdf);
 document.getElementById("transactionBill").addEventListener("change", updateBillFileName);
 document.getElementById("transactionAmount").addEventListener("keydown", event => {
   if (event.key === "Enter") {
