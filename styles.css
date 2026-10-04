@@ -1267,6 +1267,9 @@ button:disabled {
 #billPreviewImage { width: 100%; max-height: 76vh; object-fit: contain; border-radius: 12px; background: #fff; }
 .profile-modal-panel { width: min(440px, 100%); }
 .profile-form { display: grid; gap: 14px; }
+.profile-menu { display: grid; gap: 12px; }
+.profile-menu .helper-text { margin: 0 0 2px; }
+.profile-page-panel { width: min(620px, 100%); margin: 36px auto; }
 
 .db-status { flex-basis: 100%; font-weight: 700; }
 .db-status-error { color: var(--danger); }

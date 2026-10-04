@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Delete a project | EarthNest Developers</title>
+  <link rel="stylesheet" href="styles.css?v=20261004profile-pages" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero-banner hero-banner-projects">
+      <div class="hero-copy"><span class="eyebrow">Profile</span><h1>Delete a project</h1><p>Choose a project and submit its deletion request.</p></div>
+      <div class="hero-actions"><a class="nav-pill" href="index.html">Dashboard</a><button id="logoutBtn">Logout</button></div>
+    </header>
+    <main class="panel profile-page-panel">
+      <div class="panel-head"><div><span class="eyebrow eyebrow-soft">Project management</span><h2>Request project deletion</h2></div></div>
+      <form id="deleteProjectForm" class="profile-form">
+        <label class="field"><span>Select project</span><select id="projectToDelete" required></select></label>
+        <p class="helper-text">Deletion follows the existing approval process when other project members must approve.</p>
+        <div class="action-row"><button class="button-danger" id="deleteProjectButton" type="submit">Request project deletion</button><a class="button-link button-secondary" href="index.html">Cancel</a></div>
+      </form>
+      <p id="deleteProjectStatus" class="helper-text" role="status" aria-live="polite"></p>
+    </main>
+  </div>
+  <div id="deleteProjectToast" class="request-success-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true">✓</span><span id="deleteProjectToastText">Deletion request sent.</span>
+  </div>
+  <script src="logout.js"></script>
+  <script src="common.js?v=20260530a"></script>
+  <script src="delete-project.js?v=20261004"></script>
+</body>
+</html>

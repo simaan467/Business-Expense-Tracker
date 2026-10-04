@@ -84,24 +84,18 @@
       <div class="bill-modal-head">
         <div>
           <span class="eyebrow eyebrow-soft">Profile</span>
-          <h2 id="profileModalTitle">Edit your name</h2>
+          <h2 id="profileModalTitle">Profile options</h2>
         </div>
         <button type="button" class="button-secondary bill-modal-close" id="closeProfileButton" aria-label="Close profile editor">Close</button>
       </div>
-      <form id="profileForm" class="profile-form">
-        <label class="field">
-          <span>Name</span>
-          <input type="text" id="profileName" name="name" maxlength="80" required autocomplete="name" />
-        </label>
-        <p class="helper-text">This updates your account name and project membership records.</p>
-        <div class="action-row">
-          <button type="submit" id="saveProfileButton">Save name</button>
-        </div>
-      </form>
+      <div id="profileMenu" class="profile-menu">
+        <a class="button-link" href="profile-name.html">Edit my name</a>
+        <a class="button-link button-danger" href="delete-project.html">Delete a project</a>
+      </div>
     </section>
   </div>
   <script src="logout.js"></script>
   <script src="common.js?v=20260530a"></script>
-  <script src="dashboard.js?v=20260920deletion-requests"></script>
+  <script src="dashboard.js?v=20261004profile-project-delete"></script>
 </body>
 </html>

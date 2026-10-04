@@ -25,39 +25,11 @@ function getDashboardCurrentUser() {
 function openProfileModal() {
   const user = getDashboardCurrentUser();
   if (!user) return;
-  document.getElementById("profileName").value = user.name || "";
   document.getElementById("profileModal").hidden = false;
-  document.getElementById("profileName").focus();
 }
 
 function closeProfileModal() {
   document.getElementById("profileModal").hidden = true;
-}
-
-async function saveProfile(event) {
-  event.preventDefault();
-  const name = document.getElementById("profileName").value.trim();
-  if (!name) { showDashboardRequestToast("Enter your name.", true); return; }
-
-  const saveButton = document.getElementById("saveProfileButton");
-  saveButton.disabled = true;
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/profile`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Your profile could not be updated.");
-    sessionStorage.setItem("currentUser", JSON.stringify(result.user));
-    sessionStorage.setItem("authToken", result.token);
-    closeProfileModal();
-    showDashboardRequestToast("Your name has been updated.");
-  } catch (error) {
-    showDashboardRequestToast(error.message, true);
-  } finally {
-    saveButton.disabled = false;
-  }
 }
 
 async function loadApprovalNotifications() {
@@ -158,27 +130,9 @@ function renderProjectDirectory() {
         <a class="button-link" href="project.html?id=${encodeURIComponent(item.project.id)}">
           ${escapeHtml(t("common.openProjectPage"))}
         </a>
-        <button type="button" class="button-danger dashboard-delete-project" data-delete-project-id="${escapeHtml(item.project.id)}">Delete Project</button>
       </div>
     </article>
   `).join("");
-}
-
-async function requestDashboardProjectDeletion(projectId) {
-  const project = projects.find(item => String(item.id) === String(projectId));
-  if (!project || !confirm(`Request deletion of "${project.name}"? Investor approval may be required.`)) return;
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/deletion-request`, { method: "POST" });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Deletion request could not be sent.");
-    await hydrateWorkspaceFromDatabase(API_BASE_URL);
-    await loadApprovalNotifications();
-    refreshState();
-    renderAll();
-    showDashboardRequestToast(result.deleted ? "Project deleted." : "Deletion request sent to this project's pending approvals.");
-  } catch (error) {
-    showDashboardRequestToast(error.message, true);
-  }
 }
 
 function renderAll() {
@@ -186,13 +140,8 @@ function renderAll() {
   renderProjectDirectory();
 }
 window.addEventListener("app-languagechange", renderAll);
-document.getElementById("projectDirectory").addEventListener("click", event => {
-  const button = event.target.closest(".dashboard-delete-project");
-  if (button) requestDashboardProjectDeletion(button.dataset.deleteProjectId);
-});
 document.getElementById("openProfileButton").addEventListener("click", openProfileModal);
 document.getElementById("closeProfileButton").addEventListener("click", closeProfileModal);
-document.getElementById("profileForm").addEventListener("submit", saveProfile);
 document.getElementById("profileModal").addEventListener("click", event => {
   if (event.target === event.currentTarget) closeProfileModal();
 });

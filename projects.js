@@ -282,7 +282,7 @@ function renderProjects() {
           <h3>Project deletion approval pending</h3>
           <p>${escapeHtml(deletionRequest.requestedByName)} requested deletion. ${deletionRequest.approvedBy.length} of ${deletionRequest.requiredApprovals} member approvals received.</p>
         </div>
-        ${canApproveDeletion ? `<div class="approval-actions"><button type="button" class="button-danger" data-approve-project-deletion-id="${escapeHtml(activeProject.id)}">Approve deletion</button><button type="button" class="button-secondary" data-deny-project-deletion-id="${escapeHtml(activeProject.id)}">Deny deletion</button></div>` : ""}
+        ${canApproveDeletion ? `<div class="approval-actions"><button type="button" class="button-danger" data-approve-project-deletion-id="${escapeHtml(activeProject.id)}">Delete</button><button type="button" class="button-secondary" data-deny-project-deletion-id="${escapeHtml(activeProject.id)}">No</button></div>` : ""}
       </div>
     ` : "";
     const transactionMarkup = relatedTransactions.length

@@ -173,6 +173,36 @@ async function ensureSchema() {
     )
   `);
 
+  // Perform historical-name synchronization in the database so every app
+  // instance applies it whenever a profile name changes.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION sync_user_name_history()
+    RETURNS trigger AS $$
+    BEGIN
+      IF NEW.name IS NOT DISTINCT FROM OLD.name THEN RETURN NEW; END IF;
+      UPDATE project_members SET name=NEW.name WHERE mobile=NEW.mobile;
+      UPDATE project_assignments SET member_name=NEW.name WHERE member_mobile=NEW.mobile;
+      UPDATE investments SET investor_name=NEW.name WHERE investor_mobile=NEW.mobile;
+      UPDATE pending_investments SET investor_name=NEW.name WHERE investor_mobile=NEW.mobile;
+      UPDATE transactions t SET
+        member_name=NEW.name,
+        investor=CASE WHEN lower(coalesce(investor, ''))=lower(OLD.name) THEN NEW.name ELSE investor END,
+        supervisor=CASE WHEN lower(coalesce(supervisor, ''))=lower(OLD.name) THEN NEW.name ELSE supervisor END
+      WHERE lower(t.member_name)=lower(OLD.name) AND t.member_type=OLD.role
+        AND EXISTS (SELECT 1 FROM projects p JOIN project_assignments a ON a.project_id=p.id WHERE p.name=t.project AND a.member_mobile=NEW.mobile);
+      UPDATE pending_transactions t SET
+        member_name=NEW.name,
+        investor=CASE WHEN lower(coalesce(investor, ''))=lower(OLD.name) THEN NEW.name ELSE investor END,
+        supervisor=CASE WHEN lower(coalesce(supervisor, ''))=lower(OLD.name) THEN NEW.name ELSE supervisor END
+      WHERE lower(t.member_name)=lower(OLD.name) AND t.member_type=OLD.role
+        AND EXISTS (SELECT 1 FROM projects p JOIN project_assignments a ON a.project_id=p.id WHERE p.name=t.project AND a.member_mobile=NEW.mobile);
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+  await pool.query("DROP TRIGGER IF EXISTS user_name_history_sync ON users");
+  await pool.query("CREATE TRIGGER user_name_history_sync AFTER UPDATE OF name ON users FOR EACH ROW EXECUTE FUNCTION sync_user_name_history()");
+
   // `project_members` is the central investor/supervisor directory. Backfill
   // accounts created before that directory was introduced, so existing users
   // show up without needing to create a new project first.
@@ -302,6 +332,30 @@ async function handleApi(req, res, url) {
       if (!userResult.rows.length) { await client.query("ROLLBACK"); sendJson(res, 404, { error: "Your account could not be found." }); return; }
       await client.query("update project_members set name=$2 where mobile=$1", [currentUser.mobile, updatedName]);
       await client.query("update project_assignments set member_name=$2 where member_mobile=$1", [currentUser.mobile, updatedName]);
+      // Names are shown in the historical ledgers too. Investments carry the
+      // investor's mobile number, so they can be updated exactly. Legacy
+      // expense records only contain the actor's name, therefore scope those
+      // updates to projects to which this account is assigned.
+      await client.query("update investments set investor_name=$2 where investor_mobile=$1", [currentUser.mobile, updatedName]);
+      await client.query("update pending_investments set investor_name=$2 where investor_mobile=$1", [currentUser.mobile, updatedName]);
+      await client.query(`
+        update transactions t set
+          member_name=$2,
+          investor=case when lower(coalesce(investor, ''))=lower($3) then $2 else investor end,
+          supervisor=case when lower(coalesce(supervisor, ''))=lower($3) then $2 else supervisor end
+        where lower(t.member_name)=lower($3)
+          and t.member_type=$4
+          and exists (select 1 from projects p join project_assignments a on a.project_id=p.id where p.name=t.project and a.member_mobile=$1)
+      `, [currentUser.mobile, updatedName, currentUser.name, currentUser.role]);
+      await client.query(`
+        update pending_transactions t set
+          member_name=$2,
+          investor=case when lower(coalesce(investor, ''))=lower($3) then $2 else investor end,
+          supervisor=case when lower(coalesce(supervisor, ''))=lower($3) then $2 else supervisor end
+        where lower(t.member_name)=lower($3)
+          and t.member_type=$4
+          and exists (select 1 from projects p join project_assignments a on a.project_id=p.id where p.name=t.project and a.member_mobile=$1)
+      `, [currentUser.mobile, updatedName, currentUser.name, currentUser.role]);
       // Approval records identify people by name. Keep pending requests usable
       // immediately after a profile rename.
       const replacePendingName = `
@@ -311,6 +365,14 @@ async function handleApi(req, res, url) {
       `;
       await client.query(replacePendingName.replace("%TABLE%", "pending_transactions"), [currentUser.name, updatedName]);
       await client.query(replacePendingName.replace("%TABLE%", "pending_investments"), [currentUser.name, updatedName]);
+      const replaceApprovalHistoryName = `
+        update %TABLE% set approval_history =
+          (select coalesce(jsonb_agg(case when lower(item->>'name')=lower($1) then jsonb_set(item, '{name}', to_jsonb($2::text)) else item end), '[]'::jsonb)
+           from jsonb_array_elements(approval_history) item)
+      `;
+      await client.query(replaceApprovalHistoryName.replace("%TABLE%", "transactions"), [currentUser.name, updatedName]);
+      await client.query(replaceApprovalHistoryName.replace("%TABLE%", "pending_transactions"), [currentUser.name, updatedName]);
+      await client.query(replaceApprovalHistoryName.replace("%TABLE%", "pending_investments"), [currentUser.name, updatedName]);
       await client.query("update pending_transactions set proposer_name=$2 where proposer_name=$1", [currentUser.name, updatedName]);
       await client.query("update pending_investments set proposer_name=$2 where proposer_name=$1", [currentUser.name, updatedName]);
       await client.query("update pending_transaction_deletions set requested_by_name=$2 where requested_by_name=$1", [currentUser.name, updatedName]);

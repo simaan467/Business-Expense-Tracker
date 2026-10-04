@@ -11,8 +11,6 @@ let selectedInvestorForHistory = "";
 let investmentRequestInvestor = null;
 let requestSuccessTimer = null;
 let activeProjectSection = new URLSearchParams(window.location.search).get("section") === "approvals" ? "approvals" : "";
-let transactionPage = 1;
-let transactionPageSize = 10;
 
 function showProjectSection(section) {
   activeProjectSection = section;
@@ -747,11 +745,11 @@ function renderDeletionRequests(currentUserName) {
   const projectDeletion = pendingDeletionRequests.projectDeletion;
   const projectMarkup = projectDeletion ? (() => {
     const canApprove = user && projectDeletion.requestedByMobile !== user.mobile && !projectDeletion.approvedBy.includes(user.mobile);
-    return `<article class="approval-card request-deletion-card"><div class="approval-details"><span class="eyebrow request-type-deletion">Deletion request</span><h3>Delete this project</h3><p class="helper-text">Requested by ${escapeHtml(projectDeletion.requestedByName)} · ${projectDeletion.approvedBy.length} of ${projectDeletion.requiredApprovals} member approvals received.</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-project-deletion button-danger" data-approve-project-deletion-id="${escapeHtml(project.id)}">Approve deletion</button><button type="button" class="deny-project-deletion button-secondary" data-deny-project-deletion-id="${escapeHtml(project.id)}">Deny deletion</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
+    return `<article class="approval-card request-deletion-card"><div class="approval-details"><span class="eyebrow request-type-deletion">Deletion request</span><h3>Delete this project</h3><p class="helper-text">Requested by ${escapeHtml(projectDeletion.requestedByName)} · ${projectDeletion.approvedBy.length} of ${projectDeletion.requiredApprovals} member approvals received.</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-project-deletion button-danger" data-approve-project-deletion-id="${escapeHtml(project.id)}">Delete</button><button type="button" class="deny-project-deletion button-secondary" data-deny-project-deletion-id="${escapeHtml(project.id)}">No</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
   })() : "";
   const transactionMarkup = pendingDeletionRequests.transactionDeletions.map(request => {
     const canApprove = request.eligibleApprovers.some(name => name.toLowerCase() === currentUserName.toLowerCase()) && !request.approvedBy.some(name => name.toLowerCase() === currentUserName.toLowerCase());
-    return `<article class="approval-card request-deletion-card"><div class="approval-details"><div class="approval-heading"><div><span class="eyebrow request-type-deletion">Deletion request</span><h3>${escapeHtml(request.receiver)}</h3></div><strong class="approval-amount">${formatCurrency(request.amount)}</strong></div><p class="helper-text">Ledger entry requested for deletion by ${escapeHtml(request.requestedByName)} · ${request.approvedBy.length} of ${request.requiredApprovals} investor approvals received.</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-ledger-deletion button-danger" data-approve-ledger-deletion-id="${escapeHtml(request.transactionId)}">Approve deletion</button><button type="button" class="deny-ledger-deletion button-secondary" data-deny-ledger-deletion-id="${escapeHtml(request.transactionId)}">Deny deletion</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
+    return `<article class="approval-card request-deletion-card"><div class="approval-details"><div class="approval-heading"><div><span class="eyebrow request-type-deletion">Deletion request</span><h3>${escapeHtml(request.receiver)}</h3></div><strong class="approval-amount">${formatCurrency(request.amount)}</strong></div><p class="helper-text">Ledger entry requested for deletion by ${escapeHtml(request.requestedByName)} · ${request.approvedBy.length} of ${request.requiredApprovals} investor approvals received.</p></div><div class="approval-actions">${canApprove ? `<div class="approval-decision-buttons"><button type="button" class="approve-ledger-deletion button-danger" data-approve-ledger-deletion-id="${escapeHtml(request.transactionId)}">Delete</button><button type="button" class="deny-ledger-deletion button-secondary" data-deny-ledger-deletion-id="${escapeHtml(request.transactionId)}">No</button></div>` : '<span class="chip muted-chip">Pending</span>'}</div></article>`;
   }).join("");
   return projectMarkup + transactionMarkup;
 }
@@ -886,13 +884,7 @@ function renderTransactions() {
   const tbody = document.getElementById("projectTransactionBody");
   const filteredTotal = document.getElementById("projectFilteredTotal");
   const filtered = getFilteredTransactions();
-  const totalPages = Math.max(1, Math.ceil(filtered.length / transactionPageSize));
-  transactionPage = Math.min(transactionPage, totalPages);
-  const pageStart = (transactionPage - 1) * transactionPageSize;
-  const pageTransactions = filtered.slice(pageStart, pageStart + transactionPageSize);
-  document.getElementById("transactionPageStatus").textContent = `Page ${transactionPage} of ${totalPages}`;
-  document.getElementById("previousTransactionPage").disabled = transactionPage <= 1;
-  document.getElementById("nextTransactionPage").disabled = transactionPage >= totalPages;
+  const pageTransactions = filtered;
 
   if (!pageTransactions.length) {
     tbody.innerHTML = `
@@ -1136,6 +1128,7 @@ async function addProjectMember() {
   document.getElementById("projectMemberExisting").value = "";
   refreshState();
   renderAll();
+  showRequestSubmitted(`${member.name} has been added to this project.`);
 }
 
 function renderAll() {
@@ -1168,27 +1161,26 @@ document.getElementById("transactionPaidTo").addEventListener("input", renderRec
 document.getElementById("transactionPaidTo").addEventListener("blur", () => {
   window.setTimeout(() => { document.getElementById("recentPaidToNames").hidden = true; }, 150);
 });
-document.getElementById("recentPaidToNames").addEventListener("click", event => {
+function useRecentPaidToSuggestion(event) {
   const suggestion = event.target.closest("[data-paid-to-name]");
   if (!suggestion) return;
-  document.getElementById("transactionPaidTo").value = suggestion.dataset.paidToName;
+  // Pointer-down fires before the input blur event, so the selected value is
+  // applied even when the suggestion list would otherwise be hidden first.
+  event.preventDefault();
+  const input = document.getElementById("transactionPaidTo");
+  input.value = suggestion.dataset.paidToName;
   document.getElementById("recentPaidToNames").hidden = true;
-});
+  input.focus();
+}
+document.getElementById("recentPaidToNames").addEventListener("pointerdown", useRecentPaidToSuggestion);
+document.getElementById("recentPaidToNames").addEventListener("click", useRecentPaidToSuggestion);
 document.getElementById("projectMemberRole").addEventListener("change", renderProjectMemberManager);
 document.getElementById("filterRole").addEventListener("change", () => {
-  transactionPage = 1;
   renderFilters();
   renderTransactions();
 });
-document.getElementById("filterMember").addEventListener("change", () => { transactionPage = 1; renderTransactions(); });
-document.getElementById("filterPaidTo").addEventListener("change", () => { transactionPage = 1; renderTransactions(); });
-document.getElementById("transactionPageSize").addEventListener("change", event => {
-  transactionPageSize = Number(event.target.value) || 10;
-  transactionPage = 1;
-  renderTransactions();
-});
-document.getElementById("previousTransactionPage").addEventListener("click", () => { transactionPage = Math.max(1, transactionPage - 1); renderTransactions(); });
-document.getElementById("nextTransactionPage").addEventListener("click", () => { transactionPage += 1; renderTransactions(); });
+document.getElementById("filterMember").addEventListener("change", renderTransactions);
+document.getElementById("filterPaidTo").addEventListener("change", renderTransactions);
 document.getElementById("exportTransactionsPdf").addEventListener("click", exportTransactionsToPdf);
 document.getElementById("transactionBill").addEventListener("change", updateBillFileName);
 document.getElementById("transactionAmount").addEventListener("keydown", event => {
