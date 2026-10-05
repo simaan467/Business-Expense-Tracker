@@ -719,6 +719,7 @@ function renderPendingApprovals() {
         <dl class="approval-meta">
           <div><dt>Submitted by</dt><dd>${escapeHtml(tx.proposerName || tx.memberName)}</dd></div>
           <div><dt>Expense entered by</dt><dd>${escapeHtml(tx.memberName)} (${escapeHtml(getMemberTypeLabel(tx.memberType))})</dd></div>
+          <div><dt>Details</dt><dd>${escapeHtml(tx.details || "—")}</dd></div>
           <div><dt>Submitted on</dt><dd>${escapeHtml(formatTransactionDate(tx))}</dd></div>
           <div><dt>Approval progress</dt><dd>${escapeHtml(tx.approvedBy.length)} of ${escapeHtml(tx.requiredApprovals)} investors · ${remaining ? `${remaining} more needed` : "ready to save"}</dd></div>
         </dl>

@@ -88,7 +88,6 @@ async function ensureSchema() {
       supervisor text,
       receiver text NOT NULL,
       details text,
-      details text,
       amount numeric(14,2) NOT NULL,
       bill_name text,
       bill_type text,
