@@ -977,11 +977,14 @@ function exportTransactionsToPdf() {
     if (y + 24 > pageHeight - 38) nextPage();
     doc.setFont("helvetica", "bold"); doc.text(`Total expenses: ${formatPdfCurrency(sumTransactions(records))}`, pageWidth - 190, y + 16);
     const name = project.name.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase() || "project";
+    const filename = `${name}-transactions.pdf`;
     if (window.AndroidPdf) {
-        // Send PDF to Android
+        const pdfData = doc.output("datauristring");
+        window.AndroidPdf.savePdf(pdfData, filename);
+        showRequestSubmitted("Your transaction PDF has been saved to Downloads.");
     } else {
-        // Normal browser download
-        doc.save(`${name}-transactions.pdf`);
+        doc.save(filename);
+        showRequestSubmitted("Your transaction PDF has been downloaded.");
     }
   } catch (error) { showRequestSubmitted(error.message, true); }
 }
