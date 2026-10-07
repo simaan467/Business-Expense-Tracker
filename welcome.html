@@ -7,6 +7,14 @@
   <link rel="stylesheet" href="auth.css" />
 </head>
 <body>
+  <script>
+      const currentUser = localStorage.getItem("currentUser");
+      const authToken = localStorage.getItem("authToken");
+
+      if (currentUser && authToken) {
+          window.location.replace("index.html");
+      }
+  </script>
   <main class="auth-container">
     <section class="auth-card welcome-card" aria-labelledby="welcomeTitle">
       <p class="brand-kicker">WELCOME TO</p>
