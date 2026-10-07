@@ -12,7 +12,7 @@ const DEFAULT_LANGUAGE = "en";
 const browserFetch = window.fetch.bind(window);
 window.fetch = (input, init = {}) => {
   const requestUrl = typeof input === "string" ? input : input.url;
-  const token = sessionStorage.getItem("authToken");
+  const token = localStorage.getItem("authToken");
   if (!token || !String(requestUrl).includes("/api/")) return browserFetch(input, init);
   const headers = new Headers(init.headers || {});
   headers.set("Authorization", `Bearer ${token}`);

@@ -41,8 +41,8 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
             // Never show a previous account's cached workspace while this user
             // is being restored from the server.
             ["investors", "supervisors", "projects", "transactions"].forEach(key => localStorage.removeItem(key));
-            sessionStorage.setItem("currentUser", JSON.stringify(result.user));
-            sessionStorage.setItem("authToken", result.token);
+            localStorage.setItem("currentUser", JSON.stringify(result.user));
+            localStorage.setItem("authToken", result.token);
             alert(result.message);
 
             window.location.href = "index.html";

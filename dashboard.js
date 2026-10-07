@@ -18,7 +18,7 @@ function showDashboardRequestToast(message, isError = false) {
 }
 
 function getDashboardCurrentUser() {
-  try { return JSON.parse(sessionStorage.getItem("currentUser") || "null"); }
+  try { return JSON.parse(localStorage.getItem("currentUser") || "null"); }
   catch { return null; }
 }
 

@@ -412,7 +412,7 @@ function renderProjects() {
 
 function getCurrentUser() {
   try {
-    const user = JSON.parse(sessionStorage.getItem("currentUser") || "null");
+    const user = JSON.parse(localStorage.getItem("currentUser") || "null");
     return user?.name && ["Investor", "Supervisor"].includes(user.role) ? user : null;
   } catch (error) {
     return null;

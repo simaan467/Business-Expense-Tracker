@@ -13,7 +13,7 @@ function showProfileToast(message, isError = false) {
   toastTimer = window.setTimeout(() => { toast.hidden = true; }, 3500);
 }
 
-try { nameInput.value = JSON.parse(sessionStorage.getItem("currentUser") || "null")?.name || ""; } catch { /* Leave the field empty. */ }
+try { nameInput.value = JSON.parse(localStorage.getItem("currentUser") || "null")?.name || ""; } catch { /* Leave the field empty. */ }
 
 document.getElementById("profileNameForm").addEventListener("submit", async event => {
   event.preventDefault();
@@ -25,8 +25,8 @@ document.getElementById("profileNameForm").addEventListener("submit", async even
     const response = await fetch(`${API_BASE_URL}/api/profile`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Your name could not be updated.");
-    sessionStorage.setItem("currentUser", JSON.stringify(result.user));
-    sessionStorage.setItem("authToken", result.token);
+    localStorage.setItem("currentUser", JSON.stringify(result.user));
+    localStorage.setItem("authToken", result.token);
     // Refresh cached project history before the user returns to a project page.
     try { await hydrateWorkspaceFromDatabase(API_BASE_URL); } catch (error) { console.warn("Workspace refresh skipped.", error); }
     status.textContent = "Your name has been updated.";
