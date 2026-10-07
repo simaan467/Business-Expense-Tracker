@@ -829,13 +829,17 @@ button:disabled {
 }
 
 .dashboard-brand-logo {
-    width: 64px;
-    height: 64px;
-    flex: 0 0 64px;
+    /* The supplied brand mark is portrait-oriented. A portrait frame lets the
+       full, high-resolution logo remain legible instead of shrinking it into
+       a small square. */
+    width: 108px;
+    height: 136px;
+    flex: 0 0 108px;
     object-fit: contain;
     border-radius: 18px;
     background: #fff;
-    padding: 5px;
+    padding: 4px;
+    image-rendering: auto;
 }
 
 .header-row .nav-pills { margin-left: auto; }
@@ -1239,7 +1243,7 @@ button:disabled {
   }
 
   .dashboard-brand { justify-content: flex-start; gap: 12px; }
-  .dashboard-brand-logo { width: 64px; height: 64px; flex-basis: 64px; border-radius: 14px; }
+  .dashboard-brand-logo { width: 76px; height: 96px; flex-basis: 76px; border-radius: 14px; }
 
   #logoutBtn {
     min-height: 42px;

@@ -977,8 +977,12 @@ function exportTransactionsToPdf() {
     if (y + 24 > pageHeight - 38) nextPage();
     doc.setFont("helvetica", "bold"); doc.text(`Total expenses: ${formatPdfCurrency(sumTransactions(records))}`, pageWidth - 190, y + 16);
     const name = project.name.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase() || "project";
-    doc.save(`${name}-transactions.pdf`);
-    showRequestSubmitted("Your transaction PDF has been downloaded.");
+    if (window.AndroidPdf) {
+        // Send PDF to Android
+    } else {
+        // Normal browser download
+        doc.save(filename);
+    }
   } catch (error) { showRequestSubmitted(error.message, true); }
 }
 
