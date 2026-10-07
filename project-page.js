@@ -628,7 +628,7 @@ async function assignProjectMember(projectId, member) {
 
 function getCurrentUserName() {
   try {
-    const user = JSON.parse(sessionStorage.getItem("currentUser") || "null");
+    const user = JSON.parse(localStorage.getItem("currentUser") || "null");
     return user?.name?.trim() || "";
   } catch (error) {
     return "";
@@ -640,7 +640,7 @@ function getCurrentUserName() {
 // former without changing the existing name-based transaction flow.
 function getCurrentUser() {
   try {
-    const user = JSON.parse(sessionStorage.getItem("currentUser") || "null");
+    const user = JSON.parse(localStorage.getItem("currentUser") || "null");
     return user?.name && user?.mobile && ["Investor", "Supervisor"].includes(user.role)
       ? user
       : null;
