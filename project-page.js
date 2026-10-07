@@ -981,7 +981,7 @@ function exportTransactionsToPdf() {
         // Send PDF to Android
     } else {
         // Normal browser download
-        doc.save(filename);
+        doc.save(`${name}-transactions.pdf`);
     }
   } catch (error) { showRequestSubmitted(error.message, true); }
 }
