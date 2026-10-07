@@ -483,3 +483,43 @@ button:active{
 .primary-action:hover{ background:#1d4ed8; transform:translateY(-2px); }
 .secondary-action{ border:1px solid #2563eb; color:#2563eb; }
 .secondary-action:hover{ background:#eff6ff; }
+
+/* ---------- Mobile/WebView Auth Layout ---------- */
+
+html,
+body {
+    width: 100%;
+    min-height: 100%;
+}
+
+body {
+    min-height: 100vh;
+    min-height: 100dvh;
+}
+
+.auth-container {
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    position: relative;
+    z-index: 2;
+}
+
+@media (max-width: 480px) {
+    .auth-container {
+        padding: 16px;
+    }
+
+    .auth-card {
+        padding: 30px 22px;
+    }
+
+    .auth-card h2,
+    .welcome-card h1 {
+        font-size: 28px;
+    }
+}
