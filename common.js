@@ -45,7 +45,7 @@ const SUPPORTED_LANGUAGES = Object.freeze({
 const TRANSLATIONS = Object.freeze({
   en: {
     common: {
-      appName: "EarthNest Developers",
+      appName: "EARTH NEST DEVELOPERS",
       navPrimary: "Primary",
       dashboard: "Dashboard",
       projects: "Projects",
@@ -130,7 +130,7 @@ const TRANSLATIONS = Object.freeze({
       languageTelugu: "Telugu"
     },
     dashboard: {
-      title: "EarthNest Developers Dashboard",
+      title: "EARTH NEST DEVELOPERS Dashboard",
       heroTitle: "Expense Dashboard",
       heroDescription:
         "Open one project at a time. Each project now lives on its own page with its own investors, supervisors, filters, entry form, and transaction ledger.",
@@ -159,7 +159,7 @@ const TRANSLATIONS = Object.freeze({
       alertInvestorExists: "That investor already exists."
     },
     projectsPage: {
-      title: "EarthNest Developers Projects",
+      title: "EARTH NEST DEVELOPERS Projects",
       heroTitle: "Project Hub",
       heroDescription:
         "Organize every project in one place, then feed those names back into the dashboard for faster transaction entry.",
@@ -201,7 +201,7 @@ const TRANSLATIONS = Object.freeze({
         `Delete "${projectName}"? This will also remove ${count} expense ${count === 1 ? "entry" : "entries"} worth ${total}.`
     },
     projectPage: {
-      title: "EarthNest Developers Project",
+      title: "EARTH NEST DEVELOPERS Project",
       heroTitle: "Project Page",
       heroSubtitle:
         "This page is reserved for one project only, with its own investors, supervisors, filters, entry form, and transaction ledger.",
@@ -1232,7 +1232,16 @@ function formatDateTime(value) {
     return String(value);
   }
 
-  return date.toLocaleString(getCurrentLocale());
+  // Keep every displayed business timestamp consistent, regardless of browser
+  // or selected app language, while still showing the entered time.
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
 }
 
 function formatTransactionDate(record) {
@@ -1471,9 +1480,9 @@ function formatProjectDate(value) {
     return t("common.existingProject");
   }
 
-  return date.toLocaleDateString(getCurrentLocale(), {
+  return date.toLocaleDateString("en-GB", {
     day: "2-digit",
-    month: "short",
+    month: "2-digit",
     year: "numeric"
   });
 }

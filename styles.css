@@ -193,6 +193,11 @@ a {
   justify-items: end;
   gap: 14px;
 }
+.hero-refresh-button { width: 36px; min-height: 36px; padding: 0; border: 1px solid rgba(255, 255, 255, .55); border-radius: 50%; background: rgba(255, 255, 255, .14); color: #fff; font-size: 1.35rem; line-height: 1; cursor: pointer; }
+.hero-refresh-button:hover, .hero-refresh-button:focus-visible { background: rgba(255, 255, 255, .28); }
+.hero-refresh-button:disabled { cursor: wait; opacity: .7; }
+.hero-refresh-button.is-refreshing { animation: project-refresh-spin .8s linear infinite; }
+@keyframes project-refresh-spin { to { transform: rotate(360deg); } }
 
 .eyebrow {
   display: inline-block;
@@ -1265,6 +1270,9 @@ button:disabled {
 .bill-modal[hidden] { display: none; }
 .bill-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 22px; background: rgba(10, 20, 28, 0.72); }
 .bill-modal-panel { width: min(920px, 100%); max-height: 92vh; display: grid; gap: 14px; padding: 18px; border-radius: 18px; background: var(--surface-strong); box-shadow: var(--shadow); }
+.edit-transaction-modal-panel { width: min(720px, 100%); overflow-y: auto; }
+.checkbox-field { display: flex; align-items: center; gap: 8px; }
+.checkbox-field input { width: auto; }
 .bill-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
 .bill-modal-head h2 { min-width: 0; overflow-wrap: anywhere; font-size: 1.2rem; }
 .bill-modal-close { flex: 0 0 auto; min-height: 40px; padding: 9px 13px; }

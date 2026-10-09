@@ -9,6 +9,7 @@ let pendingInvestments = [];
 let pendingDeletionRequests = { projectDeletion: null, transactionDeletions: [] };
 let selectedInvestorForHistory = "";
 let investmentRequestInvestor = null;
+let editingPendingTransaction = null;
 let requestSuccessTimer = null;
 let activeProjectSection = new URLSearchParams(window.location.search).get("section") === "approvals" ? "approvals" : "";
 
@@ -591,30 +592,13 @@ async function loadRemoteTransactions() {
     if (!response.ok) return;
     const remoteTransactions = await response.json();
     if (!Array.isArray(remoteTransactions)) return;
-    const merged = new Map(transactions.map(tx => [String(tx.id), tx]));
-    remoteTransactions.forEach(tx => merged.set(String(tx.id), tx));
-    transactions = [...merged.values()];
+    // The database is authoritative. Merging it with the browser cache keeps
+    // rows that were deleted remotely, which can make deleted ledger entries
+    // appear again (and older clients could subsequently re-submit them).
+    transactions = remoteTransactions;
     writeCollection(STORAGE_KEYS.transactions, transactions);
   } catch (error) {
     console.warn("Online transaction load skipped.", error);
-  }
-}
-
-async function saveRemoteTransaction(transaction) {
-  const response = await fetch(API_BASE_URL + "/api/transactions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(transaction)
-  });
-  if (!response.ok) {
-    let message = "Transaction could not be saved online.";
-    try {
-      const body = await response.json();
-      message = body.error || message;
-    } catch (error) {
-      // Keep the fallback message when the server returns non-JSON output.
-    }
-    throw new Error(message);
   }
 }
 
@@ -843,27 +827,77 @@ async function deletePendingTransaction(id) {
   await loadPendingTransactions();
 }
 
-async function editPendingTransaction(id) {
-  const tx = pendingTransactions.find(item => String(item.id) === String(id));
-  if (!tx) return;
-  const receiver = prompt("Paid to", tx.receiver); if (receiver === null) return;
-  const amount = Number(prompt("Amount", tx.amount)); if (!receiver.trim() || !Number.isFinite(amount) || amount <= 0) { alert("Enter a recipient and positive amount."); return; }
-  const response = await fetch(`${API_BASE_URL}/api/pending-transactions/${encodeURIComponent(id)}/edit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ transaction: { receiver: receiver.trim(), amount } }) });
-  const result = await response.json(); if (!response.ok) { alert(result.error || "Request could not be updated."); return; }
-  showRequestSubmitted("Your updated request has been submitted.");
-  await loadPendingTransactions();
+function toDateTimeLocalValue(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-async function syncRemoteTransactions() {
-  if (!transactions.length) return;
+function closePendingTransactionEditor() {
+  editingPendingTransaction = null;
+  document.getElementById("editPendingTransactionModal").hidden = true;
+}
+
+function updatePendingEditBillName() {
+  const file = document.getElementById("editPendingTransactionBill").files?.[0];
+  const remove = document.getElementById("editPendingTransactionRemoveBill").checked;
+  const current = editingPendingTransaction?.billImage?.name;
+  document.getElementById("editPendingTransactionBillName").textContent = file
+    ? file.name
+    : (remove ? "The current image will be removed." : (current ? `Current image: ${current}` : "No bill image attached."));
+}
+
+function editPendingTransaction(id) {
+  const tx = pendingTransactions.find(item => String(item.id) === String(id));
+  if (!tx) return;
+  editingPendingTransaction = tx;
+  const member = document.getElementById("editPendingTransactionMember");
+  const names = getAssignedMemberNames(tx.memberType);
+  member.innerHTML = names.map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
+  member.value = names.includes(tx.memberName) ? tx.memberName : names[0] || "";
+  document.getElementById("editPendingTransactionPaidTo").value = tx.receiver || "";
+  document.getElementById("editPendingTransactionDetails").value = tx.details || "";
+  document.getElementById("editPendingTransactionAmount").value = tx.amount || "";
+  document.getElementById("editPendingTransactionDateTime").value = toDateTimeLocalValue(tx.createdAt);
+  document.getElementById("editPendingTransactionBill").value = "";
+  document.getElementById("editPendingTransactionRemoveBill").checked = false;
+  document.getElementById("editPendingTransactionHelper").textContent = "Saving changes resets any approvals already given.";
+  updatePendingEditBillName();
+  document.getElementById("editPendingTransactionModal").hidden = false;
+}
+
+async function savePendingTransactionEdit() {
+  const tx = editingPendingTransaction;
+  if (!tx) return;
+  const helper = document.getElementById("editPendingTransactionHelper");
+  const memberName = document.getElementById("editPendingTransactionMember").value;
+  const receiver = document.getElementById("editPendingTransactionPaidTo").value.trim();
+  const details = document.getElementById("editPendingTransactionDetails").value.trim();
+  const amount = Number(document.getElementById("editPendingTransactionAmount").value);
+  const dateValue = document.getElementById("editPendingTransactionDateTime").value;
+  const billFile = document.getElementById("editPendingTransactionBill").files?.[0];
+  const clearBillImage = document.getElementById("editPendingTransactionRemoveBill").checked;
+  if (!memberName || !receiver || !Number.isFinite(amount) || amount <= 0 || !dateValue) {
+    helper.textContent = "Name, paid to, positive amount, and transaction date and time are required.";
+    return;
+  }
+  helper.textContent = "Saving changes…";
   try {
-    await fetch(API_BASE_URL + "/api/transactions/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(transactions)
+    const billImage = billFile ? await readBillImage(billFile) : null;
+    const response = await fetch(`${API_BASE_URL}/api/pending-transactions/${encodeURIComponent(tx.id)}/edit`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transaction: {
+        memberName, receiver, details, amount, billImage, clearBillImage,
+        createdAt: new Date(dateValue).toISOString()
+      } })
     });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Request could not be updated.");
+    closePendingTransactionEditor();
+    showRequestSubmitted("Your updated request has been submitted for approval again.");
+    await loadPendingTransactions();
   } catch (error) {
-    console.warn("Online transaction sync skipped.", error);
+    helper.textContent = error.message;
   }
 }
 
@@ -1158,7 +1192,35 @@ function renderAll() {
   showProjectSection(activeProjectSection);
 }
 
+async function refreshCurrentProject() {
+  const button = document.getElementById("refreshProjectButton");
+  if (button?.disabled) return;
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-refreshing");
+    button.setAttribute("aria-label", "Refreshing current project");
+  }
+  try {
+    await hydrateWorkspaceFromDatabase(API_BASE_URL);
+    refreshState();
+    if (project) {
+      await Promise.all([loadPendingTransactions(), loadPendingDeletionRequests(), loadInvestments()]);
+    }
+    refreshState();
+    renderAll();
+  } catch (error) {
+    showRequestSubmitted(`Could not refresh project: ${error.message}`, true);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.classList.remove("is-refreshing");
+      button.setAttribute("aria-label", "Refresh current project");
+    }
+  }
+}
+
 document.getElementById("addTransactionButton").addEventListener("click", addTransaction);
+document.getElementById("refreshProjectButton").addEventListener("click", refreshCurrentProject);
 document.querySelector(".project-section-nav").addEventListener("click", event => {
   const button = event.target.closest("[data-project-section-target]");
   if (button) showProjectSection(button.dataset.projectSectionTarget);
@@ -1260,6 +1322,14 @@ document.getElementById("addInvestmentModalClose").addEventListener("click", clo
 document.getElementById("submitInvestmentRequest").addEventListener("click", submitInvestmentRequest);
 document.getElementById("addInvestmentAmount").addEventListener("keydown", event => { if (event.key === "Enter") submitInvestmentRequest(); });
 document.getElementById("addInvestmentModal").addEventListener("click", event => { if (event.target.id === "addInvestmentModal") closeAddInvestmentModal(); });
+
+document.getElementById("editPendingTransactionClose").addEventListener("click", closePendingTransactionEditor);
+document.getElementById("savePendingTransactionEdit").addEventListener("click", savePendingTransactionEdit);
+document.getElementById("editPendingTransactionBill").addEventListener("change", updatePendingEditBillName);
+document.getElementById("editPendingTransactionRemoveBill").addEventListener("change", updatePendingEditBillName);
+document.getElementById("editPendingTransactionModal").addEventListener("click", event => {
+  if (event.target.id === "editPendingTransactionModal") closePendingTransactionEditor();
+});
 
 document
   .getElementById("billPreviewClose")

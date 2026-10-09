@@ -509,8 +509,18 @@ async function handleApi(req, res, url) {
     if (row.proposer_name.toLowerCase() !== String(currentUser.name).toLowerCase()) { sendJson(res, 403, { error: "Only the sender can change a pending request." }); return; }
     if (action === "delete") { await pool.query("delete from pending_transactions where id=$1", [row.id]); sendJson(res, 200, { ok: true }); return; }
     const tx = body.transaction || {};
-    if (!tx.receiver || !Number.isFinite(Number(tx.amount)) || Number(tx.amount) <= 0) { sendJson(res, 400, { error: "A recipient and positive amount are required." }); return; }
-    const updated = await pool.query("update pending_transactions set receiver=$2,amount=$3,bill_name=$4,bill_type=$5,bill_data_url=$6,approved_by='[]'::jsonb where id=$1 returning *", [row.id, tx.receiver, tx.amount, tx.billImage?.name || row.bill_name, tx.billImage?.type || row.bill_type, tx.billImage?.dataUrl || row.bill_data_url]);
+    const transactionDate = new Date(tx.createdAt);
+    if (!tx.memberName || !tx.receiver || !Number.isFinite(Number(tx.amount)) || Number(tx.amount) <= 0 || Number.isNaN(transactionDate.getTime())) { sendJson(res, 400, { error: "Name, recipient, positive amount, and transaction date and time are required." }); return; }
+    const member = await pool.query("select 1 from projects p join project_assignments a on a.project_id=p.id where p.name=$1 and a.role=$2 and a.member_name=$3", [row.project, row.member_type, tx.memberName]);
+    if (!member.rows.length) { sendJson(res, 400, { error: "Choose an assigned project member with the same role." }); return; }
+    const hasNewBill = Boolean(tx.billImage?.dataUrl);
+    const billName = hasNewBill ? tx.billImage.name : (tx.clearBillImage ? null : row.bill_name);
+    const billType = hasNewBill ? tx.billImage.type : (tx.clearBillImage ? null : row.bill_type);
+    const billDataUrl = hasNewBill ? tx.billImage.dataUrl : (tx.clearBillImage ? null : row.bill_data_url);
+    const updated = await pool.query(
+      "update pending_transactions set member_name=$2,investor=case when member_type='Investor' then $2 else investor end,supervisor=case when member_type='Supervisor' then $2 else supervisor end,receiver=$3,details=$4,amount=$5,bill_name=$6,bill_type=$7,bill_data_url=$8,created_at=$9,approved_by='[]'::jsonb,approval_history='[]'::jsonb,approved_at=null where id=$1 returning *",
+      [row.id, tx.memberName, tx.receiver.trim(), String(tx.details || "").trim(), tx.amount, billName, billType, billDataUrl, transactionDate.toISOString()]
+    );
     sendJson(res, 200, { ok: true, transaction: toPendingClient(updated.rows[0]) }); return;
   }
   if (req.method === "POST" && /^\/api\/transactions\/[^/]+\/deletion-request$/.test(url.pathname)) {
@@ -522,7 +532,12 @@ async function handleApi(req, res, url) {
     if (existing.rows.length) { sendJson(res, 409, { error: "This ledger entry already has a pending deletion request." }); return; }
     const approvers = await pool.query("select member_name from project_assignments where project_id=$1 and role='Investor' and member_mobile<>$2", [access.rows[0].id, currentUser.mobile]); const names = approvers.rows.map(row => row.member_name), required = Math.ceil(names.length / 2);
     const inserted = await pool.query("insert into pending_transaction_deletions (transaction_id,project,requested_by_name,eligible_approvers,required_approvals) values ($1,$2,$3,$4::jsonb,$5) returning *", [id, tx.project, currentUser.name, JSON.stringify(names), required]);
-    if (required === 0) await pool.query("delete from transactions where id=$1", [id]);
+    if (required === 0) {
+      await pool.query("delete from transactions where id=$1", [id]);
+      // An approved pending row is replayed during server startup recovery.
+      // Remove it with the final ledger row so a deleted entry cannot return.
+      await pool.query("delete from pending_transactions where id=$1", [id]);
+    }
     const request = inserted.rows[0];
     sendJson(res, 201, { ok: true, deleted: required === 0, request: required === 0 ? null : {
       transactionId: request.transaction_id, receiver: tx.receiver, memberName: tx.member_name,
@@ -540,7 +555,13 @@ async function handleApi(req, res, url) {
       if (!eligible.some(name => name.toLowerCase() === currentUser.name.toLowerCase()) || approved.some(name => name.toLowerCase() === currentUser.name.toLowerCase())) { sendJson(res, 403, { error: "You cannot approve this deletion." }); await client.query("ROLLBACK"); return; }
       approved.push(currentUser.name); const complete = approved.length >= row.required_approvals;
       await client.query("update pending_transaction_deletions set approved_by=$2::jsonb where transaction_id=$1", [id, JSON.stringify(approved)]);
-      if (complete) await client.query("delete from transactions where id=$1", [id]); await client.query("COMMIT"); sendJson(res, 200, { ok: true, deleted: complete });
+      if (complete) {
+        await client.query("delete from transactions where id=$1", [id]);
+        // Keep recovery from promoting this already-deleted approved request
+        // back into the ledger after a restart.
+        await client.query("delete from pending_transactions where id=$1", [id]);
+      }
+      await client.query("COMMIT"); sendJson(res, 200, { ok: true, deleted: complete });
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     return;
   }
@@ -974,7 +995,7 @@ if (req.method === "POST" && url.pathname === "/api/auth/forgot-password") {
   // predictable browser-style randomness.
   const otp = String(randomInt(100000, 1000000));
   await pool.query("insert into password_reset_otps (email,otp_hash,expires_at) values ($1,$2,now() + interval '10 minutes') on conflict (email) do update set otp_hash=excluded.otp_hash, expires_at=excluded.expires_at", [normalizedEmail, await bcrypt.hash(otp, 10)]);
-  await transport.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to: normalizedEmail, subject: "EarthNest Developers password reset code", text: `Your password reset OTP is ${otp}. It expires in 10 minutes.` });
+  await transport.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to: normalizedEmail, subject: "EARTH NEST DEVELOPERS password reset code", text: `Your password reset OTP is ${otp}. It expires in 10 minutes.` });
   sendJson(res, 200, { message: "OTP sent. Check your inbox." });
   return;
 }
@@ -995,4 +1016,4 @@ if (req.method === "POST" && url.pathname === "/api/auth/reset-password") {
 
 function serveStatic(req, res, url) { const pathname = decodeURIComponent(url.pathname === "/" ? "/welcome.html" : url.pathname); const fullPath = path.normalize(path.join(root, pathname)); if (!fullPath.startsWith(root)) { res.writeHead(403); res.end("Forbidden"); return; } fs.readFile(fullPath, (error, body) => { if (error) { res.writeHead(404); res.end("Not found"); return; } res.writeHead(200, { "Content-Type": types[path.extname(fullPath)] || "application/octet-stream" }); res.end(body); }); }
 const server = http.createServer(async (req, res) => { const url = new URL(req.url, "http://" + (req.headers.host || "127.0.0.1")); try { if (url.pathname.startsWith("/api/")) console.log(req.method, url.pathname); if (req.method === "OPTIONS") { setCorsHeaders(res); res.writeHead(204); res.end(); return; } if (url.pathname.startsWith("/api/")) { await handleApi(req, res, url); return; } serveStatic(req, res, url); } catch (error) { console.error(error); sendJson(res, 500, { error: error.message || "Server error" }); } });
-ensureSchema().then(() => server.listen(port, "0.0.0.0", () => console.log("EarthNest Developers app running on port " + port))).catch(error => { console.error("Database setup failed:", error); process.exit(1); });
+ensureSchema().then(() => server.listen(port, "0.0.0.0", () => console.log("EARTH NEST DEVELOPERS app running on port " + port))).catch(error => { console.error("Database setup failed:", error); process.exit(1); });
