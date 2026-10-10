@@ -1,5 +1,11 @@
 const API_BASE_URL = window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
 
+const authNotice = sessionStorage.getItem("authNotice");
+if (authNotice) {
+    sessionStorage.removeItem("authNotice");
+    window.setTimeout(() => alert(authNotice), 0);
+}
+
 document.querySelectorAll("[data-password-toggle]").forEach(button => {
     button.addEventListener("click", () => {
         const input = document.getElementById(button.dataset.passwordToggle);

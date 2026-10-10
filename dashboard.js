@@ -146,13 +146,13 @@ document.getElementById("profileModal").addEventListener("click", event => {
   if (event.target === event.currentTarget) closeProfileModal();
 });
 
-refreshState();
-renderAll();
-
-hydrateWorkspaceFromDatabase()
-  .then(async () => {
-    await loadApprovalNotifications();
-    refreshState();
-    renderAll();
-  })
-  .catch(error => console.warn("Saved workspace restore skipped.", error));
+window.sessionReady.then(isAuthenticated => {
+  if (!isAuthenticated) return;
+  return hydrateWorkspaceFromDatabase()
+    .then(async () => {
+      await loadApprovalNotifications();
+      refreshState();
+      renderAll();
+    })
+    .catch(error => console.warn("Saved workspace restore skipped.", error));
+});

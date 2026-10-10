@@ -968,59 +968,124 @@ function formatPdfCurrency(amount) {
   })}`;
 }
 
+
 function exportTransactionsToPdf() {
   try {
     const records = getExportTransactions();
     if (!records.length) throw new Error("No transactions match the selected date range and filters.");
     if (!window.jspdf?.jsPDF) throw new Error("The PDF exporter is unavailable. Please refresh and try again.");
+
     const doc = new window.jspdf.jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
     const pageWidth = doc.internal.pageSize.getWidth(), pageHeight = doc.internal.pageSize.getHeight();
+
     const columns = [
-      ["Role", 62, tx => getMemberTypeLabel(getTransactionActorType(tx))], ["Name", 88, tx => getTransactionActorName(tx)],
-      ["Paid To", 90, tx => tx.receiver], ["Details", 150, tx => tx.details || "-"],
-      ["Amount", 100, tx => formatPdfCurrency(tx.amount)], ["Date", 110, tx => formatTransactionDate(tx)],
+      ["Role", 62, tx => getMemberTypeLabel(getTransactionActorType(tx))],
+      ["Name", 88, tx => getTransactionActorName(tx)],
+      ["Paid To", 90, tx => tx.receiver],
+      ["Details", 150, tx => tx.details || "-"],
+      ["Amount", 100, tx => formatPdfCurrency(tx.amount)],
+      ["Date", 110, tx => formatTransactionDate(tx)],
       ["Approved By", 115, tx => (tx.approvalHistory || []).map(item => typeof item === "string" ? item : item?.name).filter(Boolean).join(", ") || "-"],
       ["Bill", 45, tx => tx.billImage ? "Yes" : "No"]
     ];
+
     let y = 42;
+
     const drawHeader = () => {
-      doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text(`${project.name} Transactions`, 36, y);
-      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-      doc.text(`Date range: ${document.getElementById("exportStartDate").value || "All dates"} to ${document.getElementById("exportEndDate").value || "All dates"} | ${records.length} transaction(s)`, 36, y + 16);
-      y += 38; let x = 36; doc.setFillColor(17, 75, 95); doc.rect(36, y, pageWidth - 72, 20, "F"); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold");
-      columns.forEach(([label, width]) => { doc.text(label, x + 4, y + 14); x += width; });
-      doc.setTextColor(30, 41, 59); doc.setFont("helvetica", "normal"); y += 20;
-    };
-    const nextPage = () => { doc.addPage(); y = 42; drawHeader(); };
-    drawHeader();
-    records.forEach(tx => {
-      const cells = columns.map(([, width, value], index) => index === 4
-        ? [String(value(tx))]
-        : doc.splitTextToSize(String(value(tx)), width - 8));
-      const rowHeight = Math.max(24, ...cells.map(cell => cell.length * 11 + 8));
-      if (y + rowHeight > pageHeight - 38) nextPage();
-      let x = 36; doc.setDrawColor(210, 218, 224);
-      columns.forEach(([, width], index) => {
-        doc.rect(x, y, width, rowHeight);
-        if (index === 4) doc.text(cells[index][0], x + width - 4, y + 13, { align: "right" });
-        else doc.text(cells[index], x + 4, y + 13);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text(`${project.name} Transactions`, 36, y);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(
+        `Date range: ${document.getElementById("exportStartDate").value || "All dates"} to ${document.getElementById("exportEndDate").value || "All dates"} | ${records.length} transaction(s)`,
+        36,
+        y + 16
+      );
+
+      y += 38;
+      let x = 36;
+      doc.setFillColor(17, 75, 95);
+      doc.rect(36, y, pageWidth - 72, 20, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+
+      columns.forEach(([label, width]) => {
+        doc.text(label, x + 4, y + 14);
         x += width;
       });
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "normal");
+      y += 20;
+    };
+
+    const nextPage = () => {
+      doc.addPage();
+      y = 42;
+      drawHeader();
+    };
+
+    drawHeader();
+
+    records.forEach(tx => {
+      const cells = columns.map(([, width, value], index) =>
+        index === 4
+          ? [String(value(tx))]
+          : doc.splitTextToSize(String(value(tx)), width - 8)
+      );
+
+      const rowHeight = Math.max(24, ...cells.map(cell => cell.length * 11 + 8));
+
+      if (y + rowHeight > pageHeight - 38) nextPage();
+
+      let x = 36;
+      doc.setDrawColor(210, 218, 224);
+
+      columns.forEach(([, width], index) => {
+        doc.rect(x, y, width, rowHeight);
+
+        if (index === 4) {
+          doc.text(cells[index][0], x + width - 4, y + 13, { align: "right" });
+        } else {
+          doc.text(cells[index], x + 4, y + 13);
+        }
+
+        x += width;
+      });
+
       y += rowHeight;
     });
+
     if (y + 24 > pageHeight - 38) nextPage();
-    doc.setFont("helvetica", "bold"); doc.text(`Total expenses: ${formatPdfCurrency(sumTransactions(records))}`, pageWidth - 190, y + 16);
+
+    doc.setFont("helvetica", "bold");
+    doc.text(
+      `Total expenses: ${formatPdfCurrency(sumTransactions(records))}`,
+      pageWidth - 190,
+      y + 16
+    );
+
     const name = project.name.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase() || "project";
     const filename = `${name}-transactions.pdf`;
+
     if (window.AndroidPdf) {
-        const pdfData = doc.output("datauristring");
-        window.AndroidPdf.savePdf(pdfData, filename);
-        showRequestSubmitted("Your transaction PDF has been saved to Downloads.");
+      const pdfData = doc.output("datauristring");
+      const saved = window.AndroidPdf.savePdf(pdfData, filename);
+
+      if (saved === true) {
+        showRequestSubmitted("Your transaction PDF has been saved to Downloads/EarthNest Developers.");
+      } else {
+        showRequestSubmitted("PDF could not be saved. Please try again.", true);
+      }
     } else {
-        doc.save(filename);
-        showRequestSubmitted("Your transaction PDF has been downloaded.");
+      doc.save(filename);
+      showRequestSubmitted("Your transaction PDF has been downloaded.");
     }
-  } catch (error) { showRequestSubmitted(error.message, true); }
+  } catch (error) {
+    showRequestSubmitted(error.message, true);
+  }
 }
 
 function renderApprovalHistory(history) {
@@ -1345,25 +1410,86 @@ document
   
 window.addEventListener("app-languagechange", renderAll);
 
-refreshState();
-checkDatabaseStatus();
-hydrateWorkspaceFromDatabase(API_BASE_URL)
-  .then(() => {
-    refreshState();
-    // Show the core project immediately, then fetch independent supporting
-    // data together instead of waiting for each endpoint in sequence.
-    renderAll();
-    return Promise.all([
-      loadPendingTransactions(),
-      loadPendingDeletionRequests(),
-      loadInvestments()
-    ]);
-  })
-  .then(() => { refreshState(); renderAll(); })
-  .catch(error => {
-    console.warn("Saved workspace restore skipped.", error);
-    renderAll();
-  });
+window.sessionReady.then(isAuthenticated => {
+  if (!isAuthenticated) return;
+  checkDatabaseStatus();
+  return hydrateWorkspaceFromDatabase(API_BASE_URL)
+    .then(() => {
+      refreshState();
+      return Promise.all([
+        loadPendingTransactions(),
+        loadPendingDeletionRequests(),
+        loadInvestments()
+      ]);
+    })
+    .then(() => { refreshState(); renderAll(); })
+    .then(() => {
+      window.setInterval(loadPendingTransactions, 15000);
+      window.setInterval(loadInvestments, 15000);
+    })
+    .catch(error => console.warn("Saved workspace restore skipped.", error));
+});
 
-window.setInterval(loadPendingTransactions, 15000);
-window.setInterval(loadInvestments, 15000);
+
+function setupAndroidTransactionDateTime() {
+    const original = document.getElementById("transactionDateTime");
+
+    if (!original || !window.AndroidDateTime) return;
+    if (document.getElementById("androidTransactionDateTime")) return;
+
+    const display = document.createElement("input");
+    display.type = "text";
+    display.id = "androidTransactionDateTime";
+    display.readOnly = true;
+    display.placeholder = "Select date and time";
+    display.setAttribute("aria-label", "Transaction date and time");
+
+    display.addEventListener("click", () => {
+        window.AndroidDateTime.showPicker();
+    });
+
+    original.insertAdjacentElement("afterend", display);
+    original.style.display = "none";
+
+    if (original.value) {
+        display.value = formatAndroidTransactionDateTime(original.value);
+    }
+}
+
+function formatAndroidTransactionDateTime(value) {
+    if (!value) return "";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) return value;
+
+    return date.toLocaleString([], {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+    });
+}
+
+window.setAndroidTransactionDateTime = function(value) {
+    const original = document.getElementById("transactionDateTime");
+    const display = document.getElementById("androidTransactionDateTime");
+
+    if (!original || !display) return;
+
+    original.value = value;
+    display.value = formatAndroidTransactionDateTime(value);
+
+    original.dispatchEvent(new Event("input", { bubbles: true }));
+    original.dispatchEvent(new Event("change", { bubbles: true }));
+};
+
+if (document.readyState === "loading") {
+    document.addEventListener(
+        "DOMContentLoaded",
+        setupAndroidTransactionDateTime
+    );
+} else {
+    setupAndroidTransactionDateTime();
+}

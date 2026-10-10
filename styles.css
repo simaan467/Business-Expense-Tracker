@@ -1385,3 +1385,95 @@ button:disabled {
   .quick-view-panel { padding: 16px; }
   .quick-filter-grid { grid-template-columns: 1fr; }
 }
+
+
+/* Android WebView: make the native date/time value visible */
+.field-custom-date input#transactionDateTime[type="datetime-local"] {
+    display: block !important;
+    width: 100% !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    padding: 10px 12px !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    color: #162330 !important;
+    -webkit-text-fill-color: #162330 !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 16px !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 12px !important;
+    -webkit-appearance: auto !important;
+    appearance: auto !important;
+    color-scheme: light;
+}
+
+.field-custom-date input#transactionDateTime::-webkit-date-and-time-value {
+    display: inline-block !important;
+    min-height: 20px !important;
+    text-align: left !important;
+    color: #162330 !important;
+}
+
+.field-custom-date input#transactionDateTime::-webkit-calendar-picker-indicator {
+    display: block !important;
+    opacity: 1 !important;
+    width: 20px;
+    height: 20px;
+}
+
+
+/* Work around Android WebView's blank datetime-local display */
+.field-custom-date input#transactionDateTime[type="datetime-local"] {
+    color: #162330 !important;
+    -webkit-text-fill-color: #162330 !important;
+    background: #ffffff !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    text-indent: 0 !important;
+    letter-spacing: normal !important;
+    direction: ltr !important;
+    color-scheme: light !important;
+}
+
+.field-custom-date input#transactionDateTime[type="datetime-local"]:focus {
+    color: #162330 !important;
+    -webkit-text-fill-color: #162330 !important;
+    outline: 2px solid #114b5f !important;
+    outline-offset: 1px;
+}
+
+.field-custom-date input#transactionDateTime[type="datetime-local"]::-webkit-datetime-edit {
+    display: inline-flex !important;
+    color: #162330 !important;
+    opacity: 1 !important;
+}
+
+.field-custom-date input#transactionDateTime[type="datetime-local"]::-webkit-datetime-edit-fields-wrapper {
+    display: inline-flex !important;
+    color: #162330 !important;
+    opacity: 1 !important;
+}
+
+.field-custom-date input#transactionDateTime[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    opacity: 1 !important;
+    filter: none !important;
+}
+
+
+#androidTransactionDateTime {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    box-sizing: border-box;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 12px;
+    background: #fff;
+    color: #162330;
+    font-family: inherit;
+    font-size: 16px;
+    cursor: pointer;
+}

@@ -646,17 +646,15 @@ document.querySelectorAll("[data-project-section]").forEach(button => {
 });
 window.addEventListener("app-languagechange", renderAll);
 
-refreshState();
-renderAll();
 const initialProjectSection = new URLSearchParams(window.location.search).get("section") === "create" ? "create" : "list";
-showProjectSection(initialProjectSection);
-hydrateWorkspaceFromDatabase(API_BASE_URL)
-  .then(async () => {
-    await Promise.all([loadDeletionRequests(), loadApprovalNotifications()]);
-    refreshState();
-    renderAll();
-    showProjectSection(initialProjectSection);
-  })
-  .catch(error => {
-    console.warn("Saved workspace restore skipped.", error);
-  });
+window.sessionReady.then(isAuthenticated => {
+  if (!isAuthenticated) return;
+  return hydrateWorkspaceFromDatabase(API_BASE_URL)
+    .then(async () => {
+      await Promise.all([loadDeletionRequests(), loadApprovalNotifications()]);
+      refreshState();
+      renderAll();
+      showProjectSection(initialProjectSection);
+    })
+    .catch(error => console.warn("Saved workspace restore skipped.", error));
+});

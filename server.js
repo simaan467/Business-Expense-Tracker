@@ -25,7 +25,7 @@ const pool = new Pool({
 const port = Number(process.env.PORT) || 4173;
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8" };
 const bcrypt = require("bcrypt");
-const { randomInt, randomUUID } = require("crypto");
+const { randomInt, randomUUID, randomBytes, createHash } = require("crypto");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
 const jwtSecret = process.env.JWT_SECRET;
@@ -171,6 +171,14 @@ async function ensureSchema() {
       expires_at timestamptz NOT NULL
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      token_hash text PRIMARY KEY,
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at timestamptz NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
 
   // Perform historical-name synchronization in the database so every app
   // instance applies it whenever a profile name changes.
@@ -240,11 +248,31 @@ async function ensureSchema() {
 }
 
 function setCorsHeaders(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  if (!res.hasHeader("Access-Control-Allow-Origin")) res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 function sendJson(res, status, body) { setCorsHeaders(res); res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" }); res.end(JSON.stringify(body)); }
+function signAccessToken(user) {
+  return jwt.sign({ id: user.id, name: user.name, role: user.role, mobile: user.mobile, email: user.email }, jwtSecret, { expiresIn: "8h" });
+}
+function parseCookies(req) {
+  return Object.fromEntries(String(req.headers.cookie || "").split(";").map(part => {
+    const separator = part.indexOf("=");
+    return separator < 0 ? ["", ""] : [part.slice(0, separator).trim(), decodeURIComponent(part.slice(separator + 1).trim())];
+  }));
+}
+function hashRefreshToken(token) { return createHash("sha256").update(token).digest("hex"); }
+function setRefreshCookie(res, token) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `refreshToken=${encodeURIComponent(token)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${30 * 24 * 60 * 60}${secure}`);
+}
+function clearRefreshCookie(res) { res.setHeader("Set-Cookie", "refreshToken=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"); }
+async function issueRefreshToken(userId) {
+  const token = randomBytes(48).toString("base64url");
+  await pool.query("insert into refresh_tokens (token_hash,user_id,expires_at) values ($1,$2,now() + interval '30 days')", [hashRefreshToken(token), userId]);
+  return token;
+}
 function getAuthenticatedUser(req) {
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!token || !jwtSecret) return null;
@@ -316,9 +344,30 @@ async function handleApi(req, res, url) {
     sendJson(res, 200, { ok: true, databaseTime: result.rows[0].now });
     return;
   }
+  if (req.method === "POST" && url.pathname === "/api/auth/refresh") {
+    const token = parseCookies(req).refreshToken;
+    const tokenHash = token && hashRefreshToken(token);
+    const result = tokenHash ? await pool.query("delete from refresh_tokens where token_hash=$1 and expires_at > now() returning user_id", [tokenHash]) : { rows: [] };
+    if (!result.rows.length) { clearRefreshCookie(res); sendJson(res, 401, { error: "Your session has expired. Please sign in again." }); return; }
+    const userResult = await pool.query("select id,name,email,mobile,role from users where id=$1", [result.rows[0].user_id]);
+    if (!userResult.rows.length) { clearRefreshCookie(res); sendJson(res, 401, { error: "Your session has expired. Please sign in again." }); return; }
+    const user = userResult.rows[0];
+    setRefreshCookie(res, await issueRefreshToken(user.id));
+    sendJson(res, 200, { token: signAccessToken(user), user });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+    const token = parseCookies(req).refreshToken;
+    if (token) await pool.query("delete from refresh_tokens where token_hash=$1", [hashRefreshToken(token)]);
+    clearRefreshCookie(res); sendJson(res, 200, { ok: true }); return;
+  }
   const isPublicAuthRoute = req.method === "POST" && ["/api/auth/register", "/api/auth/login", "/api/auth/forgot-password", "/api/auth/reset-password"].includes(url.pathname);
   const currentUser = isPublicAuthRoute ? null : getAuthenticatedUser(req);
   if (!isPublicAuthRoute && !currentUser) { sendJson(res, 401, { error: "Please sign in again." }); return; }
+  if (req.method === "GET" && url.pathname === "/api/auth/session") {
+    sendJson(res, 200, { authenticated: true, user: { id: currentUser.id, name: currentUser.name, role: currentUser.role, mobile: currentUser.mobile, email: currentUser.email } });
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/api/profile") {
     const { name } = JSON.parse(await readBody(req));
     const updatedName = String(name || "").trim();
@@ -380,7 +429,7 @@ async function handleApi(req, res, url) {
       const user = userResult.rows[0];
       sendJson(res, 200, {
         user,
-        token: jwt.sign({ id: user.id, name: user.name, role: user.role, mobile: user.mobile, email: user.email }, jwtSecret, { expiresIn: "8h" })
+        token: signAccessToken(user)
       });
     } catch (error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
     return;
@@ -912,6 +961,7 @@ async function handleApi(req, res, url) {
     [mobile, name, role]
   );
 
+  setRefreshCookie(res, await issueRefreshToken(user.id));
   sendJson(res, 200, {
     success: true,
     message: "Registration Successful"
@@ -972,7 +1022,7 @@ if (req.method === "GET" && url.pathname === "/api/users/lookup") {
   sendJson(res, 200, {
     success: true,
     message: "Login Successful",
-    token: jwt.sign({ id: user.id, name: user.name, role: user.role, mobile: user.mobile, email: user.email }, jwtSecret, { expiresIn: "8h" }),
+    token: signAccessToken(user),
     user: {
       id: user.id,
       name: user.name,
@@ -1007,6 +1057,7 @@ if (req.method === "POST" && url.pathname === "/api/auth/reset-password") {
   const reset = result.rows[0];
   if (!reset || new Date(reset.expires_at) < new Date() || !(await bcrypt.compare(String(otp), reset.otp_hash))) { sendJson(res, 400, { error: "The OTP is invalid or has expired." }); return; }
   await pool.query("update users set password_hash=$2 where lower(email)=lower($1)", [normalizedEmail, await bcrypt.hash(password, 10)]);
+  await pool.query("delete from refresh_tokens where user_id=(select id from users where lower(email)=lower($1))", [normalizedEmail]);
   await pool.query("delete from password_reset_otps where email=$1", [normalizedEmail]);
   sendJson(res, 200, { message: "Password reset successfully. You can now sign in." });
   return;
@@ -1015,5 +1066,5 @@ if (req.method === "POST" && url.pathname === "/api/auth/reset-password") {
 }
 
 function serveStatic(req, res, url) { const pathname = decodeURIComponent(url.pathname === "/" ? "/welcome.html" : url.pathname); const fullPath = path.normalize(path.join(root, pathname)); if (!fullPath.startsWith(root)) { res.writeHead(403); res.end("Forbidden"); return; } fs.readFile(fullPath, (error, body) => { if (error) { res.writeHead(404); res.end("Not found"); return; } res.writeHead(200, { "Content-Type": types[path.extname(fullPath)] || "application/octet-stream" }); res.end(body); }); }
-const server = http.createServer(async (req, res) => { const url = new URL(req.url, "http://" + (req.headers.host || "127.0.0.1")); try { if (url.pathname.startsWith("/api/")) console.log(req.method, url.pathname); if (req.method === "OPTIONS") { setCorsHeaders(res); res.writeHead(204); res.end(); return; } if (url.pathname.startsWith("/api/")) { await handleApi(req, res, url); return; } serveStatic(req, res, url); } catch (error) { console.error(error); sendJson(res, 500, { error: error.message || "Server error" }); } });
+const server = http.createServer(async (req, res) => { const url = new URL(req.url, "http://" + (req.headers.host || "127.0.0.1")); try { if (req.headers.origin) { res.setHeader("Access-Control-Allow-Origin", req.headers.origin); res.setHeader("Access-Control-Allow-Credentials", "true"); } if (url.pathname.startsWith("/api/")) console.log(req.method, url.pathname); if (req.method === "OPTIONS") { setCorsHeaders(res); res.writeHead(204); res.end(); return; } if (url.pathname.startsWith("/api/")) { await handleApi(req, res, url); return; } serveStatic(req, res, url); } catch (error) { console.error(error); sendJson(res, 500, { error: error.message || "Server error" }); } });
 ensureSchema().then(() => server.listen(port, "0.0.0.0", () => console.log("EARTH NEST DEVELOPERS app running on port " + port))).catch(error => { console.error("Database setup failed:", error); process.exit(1); });

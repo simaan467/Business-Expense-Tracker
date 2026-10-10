@@ -9,15 +9,80 @@ const STORAGE_KEYS = Object.freeze({
 const DEFAULT_LANGUAGE = "en";
 
 // Attach the signed-in user's short-lived token to every protected API call.
+// A single response handler keeps expiry behavior consistent across every page.
 const browserFetch = window.fetch.bind(window);
-window.fetch = (input, init = {}) => {
+let sessionRedirectStarted = false;
+let refreshPromise = null;
+
+function clearInvalidSession() {
+  localStorage.removeItem("currentUser");
+  localStorage.removeItem("authToken");
+  sessionStorage.setItem("authNotice", "Your session has expired. Please sign in again.");
+}
+
+function redirectToLoginForExpiredSession() {
+  if (sessionRedirectStarted) return;
+  sessionRedirectStarted = true;
+  clearInvalidSession();
+  window.location.replace("login.html");
+}
+
+function getApiBaseUrl() {
+  return window.location.protocol === "file:" ? "http://127.0.0.1:4173" : "";
+}
+
+async function renewAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = browserFetch(getApiBaseUrl() + "/api/auth/refresh", {
+      method: "POST",
+      credentials: "include"
+    }).then(async response => {
+      if (!response.ok) return false;
+      const session = await response.json();
+      if (!session.token || !session.user) return false;
+      localStorage.setItem("authToken", session.token);
+      localStorage.setItem("currentUser", JSON.stringify(session.user));
+      return true;
+    }).catch(() => false).finally(() => { refreshPromise = null; });
+  }
+  return refreshPromise;
+}
+
+window.fetch = async (input, init = {}) => {
   const requestUrl = typeof input === "string" ? input : input.url;
   const token = localStorage.getItem("authToken");
   if (!token || !String(requestUrl).includes("/api/")) return browserFetch(input, init);
   const headers = new Headers(init.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
-  return browserFetch(input, { ...init, headers });
+  const response = await browserFetch(input, { ...init, headers, credentials: init.credentials || "include" });
+  if (response.status !== 401 || String(requestUrl).includes("/api/auth/")) return response;
+  if (!(await renewAccessToken())) {
+    redirectToLoginForExpiredSession();
+    return response;
+  }
+  const retryHeaders = new Headers(init.headers || {});
+  retryHeaders.set("Authorization", `Bearer ${localStorage.getItem("authToken")}`);
+  return browserFetch(input, { ...init, headers: retryHeaders, credentials: init.credentials || "include" });
 };
+
+// Verify a still-valid-looking browser token with the server before any page
+// treats locally cached workspace data as current.
+const sessionApiBase = getApiBaseUrl();
+window.sessionReady = renewAccessToken().then(refreshed => {
+  if (refreshed) return true;
+  return window.fetch(sessionApiBase + "/api/auth/session", { cache: "no-store" });
+}).then(async responseOrRefreshed => {
+  if (responseOrRefreshed === true) return true;
+  const response = responseOrRefreshed;
+  if (!response.ok) return false;
+  const session = await response.json();
+  if (session.user) localStorage.setItem("currentUser", JSON.stringify(session.user));
+  return true;
+}).then(isAuthenticated => {
+  if (!isAuthenticated) redirectToLoginForExpiredSession();
+  return isAuthenticated;
+})
+  .catch(() => false);
 
 const SUPPORTED_LANGUAGES = Object.freeze({
   en: {

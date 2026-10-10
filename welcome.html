@@ -11,6 +11,9 @@
       const currentUser = localStorage.getItem("currentUser");
       const authToken = localStorage.getItem("authToken");
 
+      // The dashboard performs the authoritative session check. Redirect even
+      // when the short-lived access token has expired so it can be renewed
+      // with the HttpOnly refresh cookie instead of showing a login prompt.
       if (currentUser && authToken) {
           window.location.replace("index.html");
       }
