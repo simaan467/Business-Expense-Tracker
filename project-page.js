@@ -1431,18 +1431,15 @@ window.sessionReady.then(isAuthenticated => {
 });
 
 
+
 function setupAndroidTransactionDateTime() {
     const original = document.getElementById("transactionDateTime");
 
     if (!original || !window.AndroidDateTime) return;
 
-    // Keep the original input visible and use the Android picker when tapped.
+    // Prevent the native WebView picker from opening.
     original.addEventListener("click", function (event) {
         event.preventDefault();
-        window.AndroidDateTime.showPicker();
-    });
-
-    original.addEventListener("focus", function () {
         window.AndroidDateTime.showPicker();
     });
 }
