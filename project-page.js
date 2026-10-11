@@ -1435,51 +1435,24 @@ function setupAndroidTransactionDateTime() {
     const original = document.getElementById("transactionDateTime");
 
     if (!original || !window.AndroidDateTime) return;
-    if (document.getElementById("androidTransactionDateTime")) return;
 
-    const display = document.createElement("input");
-    display.type = "text";
-    display.id = "androidTransactionDateTime";
-    display.readOnly = true;
-    display.placeholder = "Select date and time";
-    display.setAttribute("aria-label", "Transaction date and time");
-
-    display.addEventListener("click", () => {
+    // Keep the original input visible and use the Android picker when tapped.
+    original.addEventListener("click", function (event) {
+        event.preventDefault();
         window.AndroidDateTime.showPicker();
     });
 
-    original.insertAdjacentElement("afterend", display);
-    original.style.display = "none";
-
-    if (original.value) {
-        display.value = formatAndroidTransactionDateTime(original.value);
-    }
-}
-
-function formatAndroidTransactionDateTime(value) {
-    if (!value) return "";
-
-    const date = new Date(value);
-
-    if (Number.isNaN(date.getTime())) return value;
-
-    return date.toLocaleString([], {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit"
+    original.addEventListener("focus", function () {
+        window.AndroidDateTime.showPicker();
     });
 }
 
 window.setAndroidTransactionDateTime = function(value) {
     const original = document.getElementById("transactionDateTime");
-    const display = document.getElementById("androidTransactionDateTime");
 
-    if (!original || !display) return;
+    if (!original) return;
 
     original.value = value;
-    display.value = formatAndroidTransactionDateTime(value);
 
     original.dispatchEvent(new Event("input", { bubbles: true }));
     original.dispatchEvent(new Event("change", { bubbles: true }));
